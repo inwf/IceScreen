@@ -14,7 +14,9 @@ bash scripts/build.sh
 open dist/IceScreen.app
 ```
 
-本地交付目录中的 `dist/IceScreen-macOS.zip` 为交叉编译通用应用包，使用 ad-hoc 签名，尚未完成 macOS 实机与 Apple 签名验证。可以在 Mac 上执行上述命令生成并验证本机应用包。
+构建同时生成 `dist/IceScreen.app` 和 `dist/IceScreen-macOS.dmg`。打开 DMG 后，将 IceScreen 拖到「Applications（应用程序）」安装。
+
+本地交付目录中的 DMG 与 ZIP 包含交叉编译通用应用，使用 ad-hoc 签名，尚未完成 macOS 实机与 Apple 签名验证。可以在 Mac 上执行上述命令生成并验证本机应用包。
 
 生成通用应用：
 
@@ -22,7 +24,13 @@ open dist/IceScreen.app
 UNIVERSAL=1 bash scripts/build.sh
 ```
 
-构建脚本生成图标、应用包和本地签名。发布者可设置 `SIGN_IDENTITY` 使用自己的 Developer ID；公证需要发布者的 Apple 开发者凭据。CI 会编译、测试并保存通用应用 ZIP。
+已有应用包可单独生成 DMG：
+
+```bash
+bash scripts/package-dmg.sh
+```
+
+构建脚本生成图标、应用包、本地签名和压缩 DMG，并执行映像校验。发布者可设置 `SIGN_IDENTITY` 使用自己的 Developer ID；公证需要发布者的 Apple 开发者凭据。CI 会编译、测试并保存通用应用 DMG 与 ZIP。
 
 首次启动，在控制中心允许「屏幕录制」和「辅助功能」，再选择一个窗口点击「悬浮」。辅助功能用于全局按键和定位来源窗口；系统可能同时要求输入监控权限。授权后按 macOS 提示重新启动应用。正式使用时将应用放到 `/Applications`，保持路径稳定。
 

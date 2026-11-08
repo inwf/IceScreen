@@ -26,3 +26,4 @@ fi
 codesign --force --options runtime --sign "$signing_identity" "$app_dir"
 codesign --verify --strict --verbose=2 "$app_dir"
 echo "Built $app_dir"
+bash scripts/package-dmg.sh

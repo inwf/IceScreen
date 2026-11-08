@@ -1,0 +1,29 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build universal application
+        run: UNIVERSAL=1 bash scripts/build.sh
+      - name: Check bundle
+        run: |
+          plutil -lint dist/IceScreen.app/Contents/Info.plist
+          dist/IceScreen.app/Contents/MacOS/IceScreen --help
+          lipo -info dist/IceScreen.app/Contents/MacOS/IceScreen
+          ditto -c -k --keepParent dist/IceScreen.app dist/IceScreen-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IceScreen-macOS
+          path: dist/IceScreen-macOS.zip
+          if-no-files-found: error

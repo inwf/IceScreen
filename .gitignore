@@ -1,0 +1,9 @@
+.agents/
+work/
+.local/
+.build/
+.swiftpm/
+dist/
+.DS_Store
+*.xcuserstate
+*.xcuserdatad/

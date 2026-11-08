@@ -1,0 +1,163 @@
+import Foundation
+import IceCore
+
+#if os(macOS)
+import AppKit
+import SwiftUI
+import Combine
+
+@main
+enum IceScreenApp {
+    @MainActor
+    static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments == ["--help"] || arguments == ["-h"] { print(CaptureRequest.usage); return }
+        let request: CaptureRequest?
+        do { request = arguments.isEmpty ? nil : try CaptureRequest.parse(arguments) }
+        catch { fputs("IceScreen: \(error.localizedDescription)\n", stderr); exit(64) }
+        let app = NSApplication.shared
+        if forwardToExistingInstance(request) { return }
+        let delegate = AppDelegate(initialRequest: request)
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
+        withExtendedLifetime(delegate) { app.run() }
+    }
+
+    @MainActor
+    private static func forwardToExistingInstance(_ request: CaptureRequest?) -> Bool {
+        let bundleID = Bundle.main.bundleIdentifier ?? "org.icescreen.app"
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) else { return false }
+        let center = DistributedNotificationCenter.default()
+        let token = UUID().uuidString
+        var acknowledged = false
+        let observer = center.addObserver(forName: .init("org.icescreen.ack"), object: token, queue: .main) { _ in acknowledged = true }
+        defer { center.removeObserver(observer) }
+        var info: [String: Any] = ["token": token]
+        if let request {
+            do { info["request"] = String(decoding: try JSONEncoder().encode(request), as: UTF8.self) }
+            catch { fatalError("Cannot encode capture request: \(error)") }
+        }
+        center.postNotificationName(.init("org.icescreen.command"), object: bundleID, userInfo: info, deliverImmediately: true)
+        let deadline = Date().addingTimeInterval(3)
+        while !acknowledged && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        if !acknowledged { fputs("IceScreen: running instance did not acknowledge the request.\n", stderr); exit(69) }
+        return true
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let initialRequest: CaptureRequest?
+    private var model: ApplicationModel!
+    private var controlWindow: NSWindow?
+    private var statusItem: NSStatusItem?
+    private var errorSubscription: AnyCancellable?
+
+    init(initialRequest: CaptureRequest?) { self.initialRequest = initialRequest; super.init() }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        model = ApplicationModel()
+        errorSubscription = model.$error.compactMap { $0 }.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.showControlCenter() }
+        }
+        installMenu()
+        let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        status.button?.image = NSImage(systemSymbolName: "square.on.square.dashed", accessibilityDescription: "IceScreen")
+        status.button?.target = self; status.button?.action = #selector(statusClicked(_:))
+        status.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        status.button?.toolTip = "IceScreen"
+        statusItem = status
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(receive(_:)),
+            name: .init("org.icescreen.command"), object: Bundle.main.bundleIdentifier ?? "org.icescreen.app")
+        if let initialRequest { model.receive(initialRequest) } else { showControlCenter() }
+    }
+
+    @objc private func receive(_ notification: Notification) {
+        if let json = notification.userInfo?["request"] as? String {
+            do { model.receive(try JSONDecoder().decode(CaptureRequest.self, from: Data(json.utf8))) }
+            catch { model.error = error.localizedDescription; showControlCenter() }
+        } else { showControlCenter() }
+        if let token = notification.userInfo?["token"] as? String {
+            DistributedNotificationCenter.default().postNotificationName(.init("org.icescreen.ack"), object: token,
+                                                                         userInfo: nil, deliverImmediately: true)
+        }
+    }
+
+    @objc func showControlCenter() {
+        if controlWindow == nil {
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 940, height: 680),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "IceScreen"
+            window.titlebarAppearsTransparent = true
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: ControlCenter(model: model))
+            window.minSize = CGSize(width: 840, height: 620)
+            window.setFrameAutosaveName("IceScreen.ControlCenter")
+            window.center()
+            controlWindow = window
+        }
+        model.checkPermissions()
+        NSApp.activate(ignoringOtherApps: true)
+        controlWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func statusClicked(_ sender: Any?) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            let menu = NSMenu()
+            let show = NSMenuItem(title: "打开 IceScreen", action: #selector(showControlCenter), keyEquivalent: "")
+            show.target = self; menu.addItem(show)
+            let capture = NSMenuItem(title: "捕获当前窗口", action: #selector(captureCurrent), keyEquivalent: "")
+            capture.target = self; menu.addItem(capture)
+            let close = NSMenuItem(title: "关闭全部浮窗", action: #selector(closeAll), keyEquivalent: "")
+            close.target = self; menu.addItem(close)
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "退出 IceScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            statusItem?.menu = menu
+            statusItem?.button?.performClick(nil)
+            statusItem?.menu = nil
+        } else { showControlCenter() }
+    }
+
+    @objc private func captureCurrent() { model.captureFocused(region: false) }
+    @objc private func closeAll() { model.closeAll() }
+    @objc private func showSettings() { model.selectedPage = "settings"; showControlCenter() }
+
+    private func installMenu() {
+        let menu = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "关于 IceScreen", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let settings = NSMenuItem(title: "偏好设置…", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self; appMenu.addItem(settings)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "退出 IceScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu; menu.addItem(appItem)
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "编辑")
+        for (title, action, key) in [("撤销", "undo:", "z"), ("剪切", "cut:", "x"), ("复制", "copy:", "c"),
+                                      ("粘贴", "paste:", "v"), ("全选", "selectAll:", "a")] {
+            edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
+        }
+        editItem.submenu = edit; menu.addItem(editItem)
+        NSApp.mainMenu = menu
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showControlCenter(); return true
+    }
+    func applicationWillTerminate(_ notification: Notification) {
+        model.shutdown()
+        DistributedNotificationCenter.default().removeObserver(self)
+    }
+}
+#else
+@main
+enum IceScreenApp {
+    static func main() {
+        if CommandLine.arguments.dropFirst().contains("--help") { print(CaptureRequest.usage); return }
+        fputs("IceScreen requires macOS 14 or later. IceCore tests can run on this platform.\n", stderr)
+        exit(1)
+    }
+}
+#endif

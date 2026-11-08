@@ -6,23 +6,74 @@ public struct Shortcut: Codable, Equatable, Sendable {
     public var option: Bool
     public var control: Bool
     public var function: Bool
+    public var shift: Bool
     public var label: String
 
-    public init(keyCode: UInt16 = 49, command: Bool = false, option: Bool = true,
-                control: Bool = true, function: Bool = false, label: String = "Space") {
+    public init(keyCode: UInt16 = 35, command: Bool = false, option: Bool = false,
+                control: Bool = false, function: Bool = true, shift: Bool = false, label: String = "P") {
         self.keyCode = keyCode; self.command = command; self.option = option
         self.control = control; self.function = function; self.label = label
+        self.shift = shift
     }
 
     public var display: String {
-        (control ? "⌃" : "") + (option ? "⌥" : "") + (command ? "⌘" : "") + (function ? "fn " : "") + label
+        (control ? "⌃" : "") + (option ? "⌥" : "") + (shift ? "⇧" : "") + (command ? "⌘" : "") + (function ? "fn " : "") + label
+    }
+
+    public var regionVariant: Shortcut? {
+        var result = self
+        if !shift { result.shift = true }
+        else if !option { result.option = true }
+        else if !control { result.control = true }
+        else if !command { result.command = true }
+        else if !function { result.function = true }
+        else { return nil }
+        return result
+    }
+
+    public func matches(keyCode: UInt16, command: Bool, option: Bool, control: Bool, function: Bool, shift: Bool) -> Bool {
+        self.keyCode == keyCode && self.command == command && self.option == option && self.control == control
+            && self.function == function && self.shift == shift
+    }
+
+    public func usesSameKeys(as other: Shortcut) -> Bool {
+        matches(keyCode: other.keyCode, command: other.command, option: other.option,
+                control: other.control, function: other.function, shift: other.shift)
+    }
+
+    private enum CodingKeys: String, CodingKey { case keyCode, command, option, control, function, shift, label }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        keyCode = try container.decode(UInt16.self, forKey: .keyCode)
+        command = try container.decode(Bool.self, forKey: .command)
+        option = try container.decode(Bool.self, forKey: .option)
+        control = try container.decode(Bool.self, forKey: .control)
+        function = try container.decode(Bool.self, forKey: .function)
+        shift = try container.decodeIfPresent(Bool.self, forKey: .shift) ?? false
+        label = try container.decode(String.self, forKey: .label)
     }
 }
 
+public enum SourceFocusBehavior: String, CaseIterable, Codable, Sendable {
+    case keep, pause, close
+}
+
+public enum TriggerModifier: String, CaseIterable, Codable, Sendable {
+    case function, shift, control, option, command
+    public var display: String {
+        switch self {
+        case .function: return "fn"; case .shift: return "⇧"; case .control: return "⌃"
+        case .option: return "⌥"; case .command: return "⌘"
+        }
+    }
+}
+
+public enum ShortcutAction: Sendable { case capture, region, closeAll }
+
 public struct Preferences: Codable, Equatable, Sendable {
     public static let frameRates = [1, 5, 10, 15, 24, 30, 60]
-    public var multiWindow = true
-    public var defaultFPS = 15
+    public var multiWindow = false
+    public var defaultFPS = 10
     public var appFrameRates: [String: Int] = [:]
     public var preferredWidth: Double = 360
     public var autoHide = false
@@ -30,18 +81,80 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var idleDetection = false
     public var idleSeconds: Double = 20
     public var shortcut = Shortcut()
+    public var regionShortcut: Shortcut?
+    public var closeAllShortcut: Shortcut?
+    public var clickToFocus = false
+    public var sourceFocusBehavior: SourceFocusBehavior = .keep
+    public var showOnFullscreenSpaces = true
+    public var quickRegionCapture = true
+    public var cornerRadius: Double = 14
+    public var showHoverHints = true
+    public var panelPosition: ZoomAnchor = .bottomRight
+    public var triggerModifier: TriggerModifier = .function
+    public var quickLook = true
+
+    public var effectiveRegionShortcut: Shortcut? { regionShortcut ?? shortcut.regionVariant }
 
     public init() {}
 
+    public func shortcutConflict(_ candidate: Shortcut, for action: ShortcutAction) -> String? {
+        var proposed = self
+        switch action {
+        case .capture: proposed.shortcut = candidate
+        case .region: proposed.regionShortcut = candidate
+        case .closeAll: proposed.closeAllShortcut = candidate
+        }
+        if let region = proposed.effectiveRegionShortcut, proposed.shortcut.usesSameKeys(as: region) {
+            return "窗口捕获与区域捕获需要使用不同的快捷键。"
+        }
+        if let close = proposed.closeAllShortcut,
+           proposed.shortcut.usesSameKeys(as: close) || proposed.effectiveRegionShortcut?.usesSameKeys(as: close) == true {
+            return "关闭全部浮窗的快捷键与捕获快捷键冲突。"
+        }
+        return nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case multiWindow, defaultFPS, appFrameRates, preferredWidth, autoHide, enhanceContrast, idleDetection, idleSeconds, shortcut
+        case regionShortcut, closeAllShortcut, clickToFocus, sourceFocusBehavior, showOnFullscreenSpaces
+        case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickLook
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        multiWindow = try c.decodeIfPresent(Bool.self, forKey: .multiWindow) ?? multiWindow
+        defaultFPS = try c.decodeIfPresent(Int.self, forKey: .defaultFPS) ?? defaultFPS
+        appFrameRates = try c.decodeIfPresent([String: Int].self, forKey: .appFrameRates) ?? appFrameRates
+        preferredWidth = try c.decodeIfPresent(Double.self, forKey: .preferredWidth) ?? preferredWidth
+        autoHide = try c.decodeIfPresent(Bool.self, forKey: .autoHide) ?? autoHide
+        enhanceContrast = try c.decodeIfPresent(Bool.self, forKey: .enhanceContrast) ?? enhanceContrast
+        idleDetection = try c.decodeIfPresent(Bool.self, forKey: .idleDetection) ?? idleDetection
+        idleSeconds = try c.decodeIfPresent(Double.self, forKey: .idleSeconds) ?? idleSeconds
+        shortcut = try c.decodeIfPresent(Shortcut.self, forKey: .shortcut) ?? shortcut
+        regionShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .regionShortcut)
+        closeAllShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .closeAllShortcut)
+        clickToFocus = try c.decodeIfPresent(Bool.self, forKey: .clickToFocus) ?? clickToFocus
+        sourceFocusBehavior = try c.decodeIfPresent(SourceFocusBehavior.self, forKey: .sourceFocusBehavior) ?? sourceFocusBehavior
+        showOnFullscreenSpaces = try c.decodeIfPresent(Bool.self, forKey: .showOnFullscreenSpaces) ?? showOnFullscreenSpaces
+        quickRegionCapture = try c.decodeIfPresent(Bool.self, forKey: .quickRegionCapture) ?? quickRegionCapture
+        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? cornerRadius
+        showHoverHints = try c.decodeIfPresent(Bool.self, forKey: .showHoverHints) ?? showHoverHints
+        panelPosition = try c.decodeIfPresent(ZoomAnchor.self, forKey: .panelPosition) ?? panelPosition
+        triggerModifier = try c.decodeIfPresent(TriggerModifier.self, forKey: .triggerModifier) ?? triggerModifier
+        quickLook = try c.decodeIfPresent(Bool.self, forKey: .quickLook) ?? quickLook
+    }
+
     public func fps(for bundleID: String) -> Int {
         let value = appFrameRates[bundleID] ?? defaultFPS
-        return Self.frameRates.contains(value) ? value : 15
+        return Self.frameRates.contains(value) ? value : 10
     }
 
     public mutating func normalize() {
-        if !Self.frameRates.contains(defaultFPS) { defaultFPS = 15 }
+        if !Self.frameRates.contains(defaultFPS) { defaultFPS = 10 }
         appFrameRates = appFrameRates.filter { Self.frameRates.contains($0.value) }
         preferredWidth = preferredWidth.isFinite ? min(1600, max(160, preferredWidth)) : 360
         idleSeconds = idleSeconds.isFinite ? min(600, max(5, idleSeconds)) : 20
+        cornerRadius = cornerRadius.isFinite ? min(30, max(0, cornerRadius)) : 14
     }
 }

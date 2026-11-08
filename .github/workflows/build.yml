@@ -9,9 +9,15 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-14
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Select toolchain
+        run: |
+          xcodebuild -version
+          swift --version
       - name: Test
         run: swift test
       - name: Build universal application and DMG
@@ -19,6 +25,7 @@ jobs:
       - name: Check bundle
         run: |
           plutil -lint dist/IceScreen.app/Contents/Info.plist
+          codesign --verify --strict --verbose=2 dist/IceScreen.app
           dist/IceScreen.app/Contents/MacOS/IceScreen --help
           lipo -info dist/IceScreen.app/Contents/MacOS/IceScreen
           ditto -c -k --keepParent dist/IceScreen.app dist/IceScreen-macOS.zip

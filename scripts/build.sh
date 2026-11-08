@@ -2,9 +2,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "Building IceScreen.app requires macOS 14+ and Xcode Command Line Tools." >&2
+    echo "Building IceScreen.app requires macOS and Xcode 26 or later." >&2
     exit 1
 fi
+sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+if [[ "${sdk_version%%.*}" -lt 26 ]]; then
+    echo "Select Xcode 26 or later to build Liquid Glass controls." >&2
+    exit 1
+fi
+mkdir -p .build/tmp
+export TMPDIR="$PWD/.build/tmp"
 configuration="${CONFIGURATION:-release}"
 signing_identity="${SIGN_IDENTITY:--}"
 app_dir="$PWD/dist/IceScreen.app"

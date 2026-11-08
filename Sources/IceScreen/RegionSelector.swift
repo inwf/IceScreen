@@ -47,6 +47,7 @@ final class RegionSurface: NSView {
     var onSelection: ((CGRect?) -> Void)?
     private var start: CGPoint?
     private var selection: CGRect?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
 
@@ -68,7 +69,11 @@ final class RegionSurface: NSView {
         message.draw(at: CGPoint(x: 20, y: 20), withAttributes: attributes)
     }
 
-    override func mouseDown(with event: NSEvent) { start = convert(event.locationInWindow, from: nil) }
+    override func mouseDown(with event: NSEvent) {
+        start = convert(event.locationInWindow, from: nil)
+        selection = nil
+        needsDisplay = true
+    }
     override func mouseDragged(with event: NSEvent) {
         guard let start else { return }
         let end = convert(event.locationInWindow, from: nil)
@@ -77,6 +82,7 @@ final class RegionSurface: NSView {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        mouseDragged(with: event)
         guard let selection, selection.width >= 4, selection.height >= 4 else { return }
         onSelection?(CGRect(x: selection.minX / bounds.width, y: selection.minY / bounds.height,
                             width: selection.width / bounds.width, height: selection.height / bounds.height))
@@ -84,5 +90,6 @@ final class RegionSurface: NSView {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { onSelection?(nil) }
     }
+    override func rightMouseDown(with event: NSEvent) { onSelection?(nil) }
 }
 #endif

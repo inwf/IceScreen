@@ -45,8 +45,9 @@ public struct Viewport: Equatable, Sendable {
     public func zoomed(by factor: Double, around anchor: CGPoint = CGPoint(x: 0.5, y: 0.5)) -> Viewport {
         guard factor.isFinite, factor > 0 else { return self }
         let ax = min(1, max(0, anchor.x)), ay = min(1, max(0, anchor.y))
-        let width = min(1, max(1.0 / 32, rect.width / factor))
-        let height = min(1, max(1.0 / 32, rect.height / factor))
+        let effectiveFactor = min(min(rect.width, rect.height) * 32, max(max(rect.width, rect.height), factor))
+        let width = rect.width / effectiveFactor
+        let height = rect.height / effectiveFactor
         return Viewport(rect: CGRect(x: rect.minX + (rect.width - width) * ax,
                                      y: rect.minY + (rect.height - height) * ay,
                                      width: width, height: height))

@@ -47,10 +47,10 @@ enum IceScreenApp {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let initialRequest: CaptureRequest?
     private var model: ApplicationModel!
-    private var controlWindow: NSWindow?
+    private var settingsWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private var errorSubscription: AnyCancellable?
 
@@ -59,69 +59,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         model = ApplicationModel()
         errorSubscription = model.$error.compactMap { $0 }.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.showControlCenter() }
+            DispatchQueue.main.async { self?.showSettings() }
         }
         installMenu()
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.image = NSImage(systemSymbolName: "square.on.square.dashed", accessibilityDescription: "IceScreen")
-        status.button?.target = self; status.button?.action = #selector(statusClicked(_:))
-        status.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         status.button?.toolTip = "IceScreen"
+        let menu = NSMenu()
+        menu.delegate = self
+        status.menu = menu
         statusItem = status
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(receive(_:)),
             name: .init("org.icescreen.command"), object: Bundle.main.bundleIdentifier ?? "org.icescreen.app")
-        if let initialRequest { model.receive(initialRequest) } else { showControlCenter() }
+        if let initialRequest { model.receive(initialRequest) }
+        else if !model.screenPermission || !model.accessibilityPermission { showSettings() }
     }
 
     @objc private func receive(_ notification: Notification) {
         if let json = notification.userInfo?["request"] as? String {
             do { model.receive(try JSONDecoder().decode(CaptureRequest.self, from: Data(json.utf8))) }
-            catch { model.error = error.localizedDescription; showControlCenter() }
-        } else { showControlCenter() }
+            catch { model.error = error.localizedDescription; showSettings() }
+        } else { showSettings() }
         if let token = notification.userInfo?["token"] as? String {
             DistributedNotificationCenter.default().postNotificationName(.init("org.icescreen.ack"), object: token,
                                                                          userInfo: nil, deliverImmediately: true)
         }
     }
 
-    @objc func showControlCenter() {
-        if controlWindow == nil {
-            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 940, height: 680),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "IceScreen"
+    @objc func showSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 620, height: 610),
+                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            window.title = "IceScreen 设置"
             window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: ControlCenter(model: model))
-            window.minSize = CGSize(width: 840, height: 620)
-            window.setFrameAutosaveName("IceScreen.ControlCenter")
+            window.contentView = NSHostingView(rootView: SettingsView(model: model, store: model.settings))
+            window.setFrameAutosaveName("IceScreen.Settings")
             window.center()
-            controlWindow = window
+            settingsWindow = window
         }
         model.checkPermissions()
         NSApp.activate(ignoringOtherApps: true)
-        controlWindow?.makeKeyAndOrderFront(nil)
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func statusClicked(_ sender: Any?) {
-        if NSApp.currentEvent?.type == .rightMouseUp {
-            let menu = NSMenu()
-            let show = NSMenuItem(title: "打开 IceScreen", action: #selector(showControlCenter), keyEquivalent: "")
-            show.target = self; menu.addItem(show)
-            let capture = NSMenuItem(title: "捕获当前窗口", action: #selector(captureCurrent), keyEquivalent: "")
-            capture.target = self; menu.addItem(capture)
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let capture = NSMenuItem(title: "捕获当前窗口  \(model.settings.value.shortcut.display)", action: #selector(captureCurrent), keyEquivalent: "")
+        capture.target = self; menu.addItem(capture)
+        let region = NSMenuItem(title: "捕获区域  \(model.settings.value.effectiveRegionShortcut?.display ?? "")", action: #selector(captureRegion), keyEquivalent: "")
+        region.target = self; menu.addItem(region)
+        if !model.sessions.isEmpty {
+            menu.addItem(.separator())
+            for session in model.sessions {
+                let item = NSMenuItem(title: session.appName + " — " + session.title, action: nil, keyEquivalent: "")
+                item.submenu = session.makeMenu()
+                menu.addItem(item)
+            }
             let close = NSMenuItem(title: "关闭全部浮窗", action: #selector(closeAll), keyEquivalent: "")
             close.target = self; menu.addItem(close)
-            menu.addItem(.separator())
-            menu.addItem(withTitle: "退出 IceScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-            statusItem?.menu = menu
-            statusItem?.button?.performClick(nil)
-            statusItem?.menu = nil
-        } else { showControlCenter() }
+        }
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self; menu.addItem(settings)
+        menu.addItem(withTitle: "退出 IceScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
     @objc private func captureCurrent() { model.captureFocused(region: false) }
+    @objc private func captureRegion() { model.captureFocused(region: true) }
     @objc private func closeAll() { model.closeAll() }
-    @objc private func showSettings() { model.selectedPage = "settings"; showControlCenter() }
 
     private func installMenu() {
         let menu = NSMenu()
@@ -144,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showControlCenter(); return true
+        showSettings(); return true
     }
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdown()

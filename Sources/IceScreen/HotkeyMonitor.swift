@@ -6,21 +6,51 @@ import IceCore
 @MainActor
 final class HotkeyMonitor {
     var shortcut = Shortcut()
-    var recording = false
+    var regionShortcut: Shortcut? = Shortcut().regionVariant
+    var closeAllShortcut: Shortcut?
+    var quickRegionCapture = true
+    var triggerModifier: TriggerModifier = .function { didSet { functionGesture.reset(); cancelPendingTap() } }
+    var recording = false { didSet { functionGesture.reset(); cancelPendingTap() } }
     var onCapture: ((Bool) -> Void)?
     var onQuickRegion: ((CGPoint) -> Void)?
     var onFunctionTap: (() -> Void)?
-    var onHoverKey: ((UInt16) -> Bool)?
+    var onFunctionDoubleTap: (() -> Void)?
+    var onCloseAll: (() -> Void)?
+    var onHoverAction: ((HoverAction) -> Bool)?
+    var onSpaceDown: (() -> Bool)?
+    var onSpaceUp: (() -> Void)?
+    var onEscape: (() -> Bool)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-    private var functionDown: TimeInterval?
-    private var functionUsed = false
+    private var functionGesture = FunctionKeyGesture()
     private var consumedKeys: Set<UInt16> = []
+    private var consumedMouseDown = false
+    private var taps = ModifierTapSequence(interval: NSEvent.doubleClickInterval)
+    private var singleTapTask: Task<Void, Never>?
+
+    private func cancelPendingTap() {
+        singleTapTask?.cancel()
+        singleTapTask = nil
+        taps.reset()
+    }
+
+    private func registerTap() {
+        singleTapTask?.cancel()
+        if taps.tap(at: ProcessInfo.processInfo.systemUptime) {
+            DispatchQueue.main.async { [weak self] in self?.onFunctionDoubleTap?() }
+        } else {
+            singleTapTask = Task { [weak self] in
+                guard let self else { return }
+                do { try await Task.sleep(for: .seconds(self.taps.interval)) } catch { return }
+                if self.taps.takeSingle(at: ProcessInfo.processInfo.systemUptime) { self.onFunctionTap?() }
+            }
+        }
+    }
 
     @discardableResult
     func start() -> Bool {
         if tap != nil { return true }
-        let mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown]
+        let mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .leftMouseUp]
             .reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let callback: CGEventTapCallBack = { _, type, event, context in
             guard let context else { return Unmanaged.passUnretained(event) }
@@ -44,52 +74,97 @@ final class HotkeyMonitor {
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         tap = nil; source = nil
+        functionGesture.reset()
+        consumedKeys.removeAll()
+        consumedMouseDown = false
+        cancelPendingTap()
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            functionGesture.reset()
+            consumedKeys.removeAll()
+            consumedMouseDown = false
+            cancelPendingTap()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
+        }
+        let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        if type == .keyUp {
+            let consumed = consumedKeys.remove(code) != nil
+            if code == 49, consumed { onSpaceUp?() }
+            return consumed
+        }
+        if type == .leftMouseUp {
+            defer { consumedMouseDown = false }
+            return consumedMouseDown
         }
         guard !recording else { return false }
         let flags = event.flags
         let function = flags.contains(.maskSecondaryFn)
+        let triggerFlag: CGEventFlags
+        switch triggerModifier {
+        case .function: triggerFlag = .maskSecondaryFn
+        case .shift: triggerFlag = .maskShift
+        case .control: triggerFlag = .maskControl
+        case .option: triggerFlag = .maskAlternate
+        case .command: triggerFlag = .maskCommand
+        }
+        let triggerHeld = flags.contains(triggerFlag)
+        let otherFlags: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift, .maskSecondaryFn]
+        let otherModifiers = !flags.intersection(otherFlags.subtracting(triggerFlag)).isEmpty
         if type == .flagsChanged {
-            if function, functionDown == nil {
-                functionDown = ProcessInfo.processInfo.systemUptime
-                functionUsed = false
-            } else if !function, let pressed = functionDown {
-                if !functionUsed, ProcessInfo.processInfo.systemUptime - pressed < 0.45 { onFunctionTap?() }
-                functionDown = nil
+            if otherModifiers { cancelPendingTap() }
+            if functionGesture.flagsChanged(function: triggerHeld, otherModifiers: otherModifiers,
+                                            at: ProcessInfo.processInfo.systemUptime) {
+                registerTap()
             }
             return false
         }
         if type == .leftMouseDown {
-            if function {
-                functionUsed = true
-                if event.getIntegerValueField(.mouseEventClickState) == 2 { onQuickRegion?(event.location); return true }
+            if triggerHeld {
+                functionGesture.consume()
+                cancelPendingTap()
+                if quickRegionCapture, !otherModifiers, event.getIntegerValueField(.mouseEventClickState) == 2 {
+                    let point = event.location
+                    consumedMouseDown = true
+                    DispatchQueue.main.async { [weak self] in self?.onQuickRegion?(point) }
+                    return true
+                }
             }
             return false
         }
-        let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-        if type == .keyUp { return consumedKeys.remove(code) != nil }
-        if function { functionUsed = true }
-        let matches = code == shortcut.keyCode
-            && flags.contains(.maskCommand) == shortcut.command
-            && flags.contains(.maskAlternate) == shortcut.option
-            && flags.contains(.maskControl) == shortcut.control
-            && function == shortcut.function
-        if matches {
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { onCapture?(flags.contains(.maskShift)) }
+        functionGesture.consume()
+        cancelPendingTap()
+        let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        if code == 53, !repeated, onEscape?() == true { consumedKeys.insert(code); return true }
+        func matches(_ key: Shortcut?) -> Bool {
+            key?.matches(keyCode: code, command: flags.contains(.maskCommand), option: flags.contains(.maskAlternate),
+                         control: flags.contains(.maskControl), function: function, shift: flags.contains(.maskShift)) == true
+        }
+        if matches(closeAllShortcut) {
+            if !repeated { DispatchQueue.main.async { [weak self] in self?.onCloseAll?() } }
             consumedKeys.insert(code)
             return true
+        }
+        let region = matches(regionShortcut)
+        if region || matches(shortcut) {
+            if !repeated {
+                DispatchQueue.main.async { [weak self] in self?.onCapture?(region) }
+            }
+            consumedKeys.insert(code)
+            return true
+        }
+        if code == 49, flags.intersection(otherFlags).isEmpty {
+            if consumedKeys.contains(code) { return true }
+            if !repeated, onSpaceDown?() == true { consumedKeys.insert(code); return true }
         }
         if flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskSecondaryFn]).isEmpty,
-           onHoverKey?(code) == true {
+           let action = HoverAction.resolve(keyCode: code, repeated: repeated), onHoverAction?(action) == true {
             consumedKeys.insert(code)
             return true
         }
-        return false
+        return repeated && consumedKeys.contains(code)
     }
 }
 #endif

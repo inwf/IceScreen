@@ -44,7 +44,7 @@ final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
     let mailbox = FrameMailbox()
     let queue = DispatchQueue(label: "org.icescreen.frames", qos: .userInteractive)
     var onActivity: (() -> Void)?
-    var onFailure: ((Error) -> Void)?
+    var onFailure: ((SCStream, Error) -> Void)?
     private var detectIdle = false
     private var lastSample: TimeInterval = 0
     private var detector = IdleDetector(threshold: 0.5)
@@ -54,7 +54,7 @@ final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        DispatchQueue.main.async { [weak self] in self?.onFailure?(error) }
+        DispatchQueue.main.async { [weak self] in self?.onFailure?(stream, error) }
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -102,23 +102,37 @@ final class CapturePipeline {
     private var worker: Task<Void, Never>?
     private var disposed = false
     private var appliedRevision = -1
+    private var lastConfiguration: ConfigurationKey?
     var onError: ((Error) -> Void)?
+
+    private struct ConfigurationKey: Equatable {
+        let viewport: Viewport
+        let sourceSize: CGSize
+        let pixels: CGSize
+        let fps: Int
+    }
 
     init(source: SCWindow) {
         self.source = source
         self.filter = SCContentFilter(desktopIndependentWindow: source)
-        output.onFailure = { [weak self] error in
-            guard let self, !self.disposed else { return }
+        output.onFailure = { [weak self] stoppedStream, error in
+            guard let self, !self.disposed, self.stream === stoppedStream else { return }
             self.running = false
             self.desiredRunning = false
+            self.stream = nil
+            self.appliedRevision = -1
+            self.output.mailbox.setEnabled(false)
             self.onError?(error)
         }
     }
 
     func configure(viewport: Viewport, sourceSize: CGSize, size: CGSize, scale: Double, fps: Int) {
         guard !disposed else { return }
-        let config = SCStreamConfiguration()
         let pixels = CaptureSizing.pixels(points: size, scale: scale)
+        let key = ConfigurationKey(viewport: viewport, sourceSize: sourceSize, pixels: pixels, fps: fps)
+        guard lastConfiguration != key else { return }
+        lastConfiguration = key
+        let config = SCStreamConfiguration()
         config.width = Int(pixels.width)
         config.height = Int(pixels.height)
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
@@ -136,6 +150,7 @@ final class CapturePipeline {
 
     func setRunning(_ value: Bool) {
         guard !disposed else { return }
+        guard desiredRunning != value else { return }
         desiredRunning = value
         output.mailbox.setEnabled(value)
         reconcile()
@@ -161,7 +176,8 @@ final class CapturePipeline {
                             try await stream.stopCapture()
                             running = false
                         }
-                        if disposed { stream = nil }
+                        stream = nil
+                        appliedRevision = -1
                         if !desiredRunning { break }
                     }
                     guard let config = desiredConfig else { break }
@@ -176,13 +192,24 @@ final class CapturePipeline {
                         appliedRevision = currentRevision
                     }
                     if !running, desiredRunning {
-                        try await stream?.startCapture()
-                        running = true
+                        if let starting = stream {
+                            try await starting.startCapture()
+                            running = stream === starting
+                        }
                     }
                     if desiredRunning == running, appliedRevision == revision { break }
                 }
             } catch {
                 desiredRunning = false
+                output.mailbox.setEnabled(false)
+                let failedStream = stream
+                stream = nil
+                appliedRevision = -1
+                if running, let failedStream {
+                    do { try await failedStream.stopCapture() }
+                    catch { if !disposed { onError?(error) } }
+                }
+                running = false
                 if !disposed { onError?(error) }
             }
         }
@@ -228,10 +255,12 @@ final class FrameView: NSView {
     }
 
     func display(_ buffer: CVPixelBuffer) { current = buffer; render() }
+    func redraw() { render() }
     func releaseFrame() { current = nil }
 
     private func render() {
-        guard let current, bounds.width > 0, bounds.height > 0,
+        guard let current, window?.isVisible == true, window?.alphaValue ?? 0 > 0,
+              bounds.width > 0, bounds.height > 0,
               inFlight.wait(timeout: .now()) == .success else { return }
         guard let drawable = metalLayer.nextDrawable(), let command = commands.makeCommandBuffer() else {
             inFlight.signal(); return

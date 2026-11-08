@@ -11,7 +11,8 @@ let package = Package(
     targets: [
         .target(name: "IceCore"),
         .executableTarget(name: "IceScreen", dependencies: ["IceCore"],
-            exclude: ["Resources"]),
+            exclude: ["Resources"],
+            linkerSettings: [.linkedFramework("SwiftUI", .when(platforms: [.macOS]))]),
         .testTarget(name: "IceCoreTests", dependencies: ["IceCore"])
     ]
 )

@@ -21,6 +21,13 @@ final class SettingsStore: ObservableObject {
             do { value = try JSONDecoder().decode(Preferences.self, from: data); value.normalize() }
             catch { fatalError("Cannot read IceScreen settings: \(error)") }
         } else { value = Preferences() }
+        if !UserDefaults.standard.bool(forKey: "IceScreen.interactionDefaults.v2") {
+            let previousDefault = Shortcut(keyCode: 49, option: true, control: true, function: false, label: "Space")
+            if value.shortcut == previousDefault { value.shortcut = Shortcut() }
+            do { UserDefaults.standard.set(try JSONEncoder().encode(value), forKey: "IceScreen.preferences.v1") }
+            catch { fatalError("Cannot persist migrated IceScreen settings: \(error)") }
+            UserDefaults.standard.set(true, forKey: "IceScreen.interactionDefaults.v2")
+        }
     }
 }
 
@@ -30,13 +37,14 @@ final class ApplicationModel: ObservableObject {
     let catalog = WindowCatalog()
     let hotkeys = HotkeyMonitor()
     let selector = RegionSelector()
+    let preview = QuickLookPreview()
+    private let focusMonitor = SourceFocusMonitor()
     @Published private(set) var sessions: [CaptureSession] = []
     @Published private(set) var screenPermission = false
     @Published private(set) var accessibilityPermission = false
     @Published private(set) var hotkeysActive = false
     @Published private(set) var loginEnabled = false
     @Published var error: String?
-    @Published var selectedPage = "windows"
     private var ticker: Timer?
     private var mouseGlobal: Any?
     private var mouseLocal: Any?
@@ -44,19 +52,65 @@ final class ApplicationModel: ObservableObject {
     private var settingsSubscription: AnyCancellable?
     private var lastExternalPID: pid_t?
     private weak var lastHidden: CaptureSession?
+    private var captureGeneration = 0
+    private var captureTasks: [UUID: Task<Void, Never>] = [:]
+    private var selectionTask: Task<Void, Never>?
 
     init() {
         lastExternalPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         hotkeys.shortcut = settings.value.shortcut
+        hotkeys.regionShortcut = settings.value.effectiveRegionShortcut
+        hotkeys.closeAllShortcut = settings.value.closeAllShortcut
+        hotkeys.quickRegionCapture = settings.value.quickRegionCapture
+        hotkeys.triggerModifier = settings.value.triggerModifier
         hotkeys.onCapture = { [weak self] region in self?.captureFocused(region: region) }
         hotkeys.onQuickRegion = { [weak self] point in self?.quickCapture(at: point) }
         hotkeys.onFunctionTap = { [weak self] in self?.toggleHoveredHidden() }
-        hotkeys.onHoverKey = { [weak self] key in self?.hoverKey(key) ?? false }
-        settingsSubscription = settings.$value.dropFirst().sink { [weak self] value in
+        hotkeys.onFunctionDoubleTap = { [weak self] in
+            guard let self, let session = self.hovered(includeHidden: true, includeAutoHidden: true) else { return }
+            if session.hidden { session.toggleHidden() }
+            session.toggleAutoHide()
+        }
+        hotkeys.onCloseAll = { [weak self] in self?.closeAll() }
+        hotkeys.onHoverAction = { [weak self] action in self?.hoverAction(action) ?? false }
+        hotkeys.onSpaceDown = { [weak self] in
+            guard let self, self.settings.value.quickLook else { return false }
+            if self.preview.isVisible { self.preview.close(); return true }
+            guard let session = self.hovered() else { return false }
+            DispatchQueue.main.async { [weak self, weak session] in
+                if let session { self?.preview.press(session) }
+            }
+            return true
+        }
+        hotkeys.onSpaceUp = { [weak self] in self?.preview.release() }
+        hotkeys.onEscape = { [weak self] in
+            guard let self, self.preview.isVisible else { return false }
+            self.preview.close(); return true
+        }
+        focusMonitor.onChange = { [weak self] windowID in
+            guard let self else { return }
+            for session in Array(self.sessions) {
+                session.sourceFocusChanged(windowID: windowID, behavior: self.settings.value.sourceFocusBehavior)
+            }
+        }
+        settingsSubscription = settings.$value.dropFirst().scan((settings.value, settings.value)) { ($0.1, $1) }.sink { [weak self] previous, value in
             guard let self else { return }
             self.hotkeys.shortcut = value.shortcut
-            for session in self.sessions { session.idleSeconds = value.idleSeconds }
+            self.hotkeys.regionShortcut = value.effectiveRegionShortcut
+            self.hotkeys.closeAllShortcut = value.closeAllShortcut
+            self.hotkeys.quickRegionCapture = value.quickRegionCapture
+            if previous.triggerModifier != value.triggerModifier { self.hotkeys.triggerModifier = value.triggerModifier }
+            if !value.quickLook { self.preview.close() }
+            for session in self.sessions {
+                session.applyPreferences(value)
+                if previous.autoHide != value.autoHide { session.autoHide = value.autoHide }
+                if previous.enhanceContrast != value.enhanceContrast { session.enhanced = value.enhanceContrast }
+                if previous.idleDetection != value.idleDetection { session.idleDetection = value.idleDetection }
+            }
             if !value.multiWindow { Array(self.sessions.dropLast()).forEach { $0.close() } }
+            if previous.sourceFocusBehavior != value.sourceFocusBehavior {
+                DispatchQueue.main.async { [weak self] in self?.focusMonitor.refresh() }
+            }
         }
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notice in
@@ -64,12 +118,20 @@ final class ApplicationModel: ObservableObject {
                 guard let self, let app = notice.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
                 if app.processIdentifier != ProcessInfo.processInfo.processIdentifier { self.lastExternalPID = app.processIdentifier }
                 else { self.checkPermissions() }
+                if !self.sessions.isEmpty {
+                    self.focusMonitor.observe(app.processIdentifier)
+                    self.focusMonitor.refresh()
+                }
             }
         })
         for (name, suspend) in [(NSWorkspace.willSleepNotification, true), (NSWorkspace.didWakeNotification, false),
                                 (NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false)] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.sessions.forEach { $0.suspend(suspend) } }
+                MainActor.assumeIsolated {
+                    let display = name == NSWorkspace.screensDidSleepNotification || name == NSWorkspace.screensDidWakeNotification
+                    if suspend { self?.preview.close() }
+                    self?.sessions.forEach { $0.suspend(suspend, display: display) }
+                }
             })
         }
         observers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] notice in
@@ -84,6 +146,7 @@ final class ApplicationModel: ObservableObject {
     func checkPermissions() {
         screenPermission = CGPreflightScreenCaptureAccess()
         accessibilityPermission = AXIsProcessTrusted()
+        if !accessibilityPermission { hotkeys.stop() }
         hotkeysActive = accessibilityPermission && hotkeys.start()
         loginEnabled = SMAppService.mainApp.status == .enabled
     }
@@ -112,9 +175,17 @@ final class ApplicationModel: ObservableObject {
     }
 
     func receive(_ request: CaptureRequest) {
+        selectionTask?.cancel()
+        selector.cancel()
         let pid = preferredPID()
-        Task {
+        captureGeneration += 1
+        let generation = captureGeneration
+        let token = UUID()
+        captureTasks[token] = Task {
+            defer { captureTasks[token] = nil }
             await catalog.refresh()
+            guard !Task.isCancelled else { return }
+            guard generation == captureGeneration || settings.value.multiWindow else { return }
             if let issue = catalog.error { error = issue; return }
             do {
                 let source = try catalog.resolve(request, preferredPID: pid)
@@ -125,6 +196,7 @@ final class ApplicationModel: ObservableObject {
     }
 
     func captureFocused(region: Bool) {
+        selector.cancel()
         var request = CaptureRequest()
         request.region = region
         receive(request)
@@ -137,8 +209,15 @@ final class ApplicationModel: ObservableObject {
     }
 
     func quickCapture(at point: CGPoint) {
-        Task {
+        selectionTask?.cancel()
+        selector.cancel()
+        captureGeneration += 1
+        let generation = captureGeneration
+        let token = UUID()
+        captureTasks[token] = Task {
+            defer { captureTasks[token] = nil }
             await catalog.refresh()
+            guard !Task.isCancelled, generation == captureGeneration || settings.value.multiWindow else { return }
             if let issue = catalog.error { error = issue; return }
             guard let source = catalog.window(at: point) else { return }
             let x = (point.x - source.frame.minX) / source.frame.width
@@ -148,18 +227,22 @@ final class ApplicationModel: ObservableObject {
     }
 
     func selectRegion(_ source: SCWindow) {
-        Task {
+        selectionTask?.cancel()
+        let generation = captureGeneration
+        selectionTask = Task {
             do {
                 try catalog.focus(source)
                 try await Task.sleep(for: .milliseconds(180))
                 await catalog.refresh()
+                guard !Task.isCancelled, generation == captureGeneration else { return }
                 guard let updated = catalog.windows.first(where: { $0.windowID == source.windowID }), updated.isOnScreen else {
                     throw RequestError.message("请先将来源窗口显示到当前桌面，再选择捕获区域。")
                 }
                 selector.select(frame: updated.frame) { [weak self] selection in
-                    if let selection { self?.start(updated, viewport: selection) }
+                    guard let self, let selection, generation == self.captureGeneration else { return }
+                    self.start(updated, viewport: selection)
                 }
-            } catch { self.error = error.localizedDescription }
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
     }
 
@@ -171,10 +254,11 @@ final class ApplicationModel: ObservableObject {
             existing.panel.orderFrontRegardless()
             return
         }
-        if !settings.value.multiWindow { closeAll() }
+        if !settings.value.multiWindow { closeAll(cancelPending: false) }
         let session = CaptureSession(source: source, viewport: viewport, preferences: settings.value, offset: sessions.count)
         session.onClose = { [weak self] value in
             guard let self else { return }
+            if self.preview.sourceID == value.source.windowID { self.preview.close() }
             self.sessions.removeAll { $0.id == value.id }
             if self.sessions.isEmpty { self.stopSessionMonitoring() }
         }
@@ -194,42 +278,64 @@ final class ApplicationModel: ObservableObject {
         sessions.filter { $0.bundleID == app }.forEach { $0.setFPS(fps) }
     }
 
-    func closeAll() { Array(sessions).forEach { $0.close() } }
+    func closeAll(cancelPending: Bool = true) {
+        if cancelPending {
+            captureGeneration += 1
+            captureTasks.values.forEach { $0.cancel() }
+            selectionTask?.cancel()
+            selector.cancel()
+        }
+        Array(sessions).forEach { $0.close() }
+    }
 
-    private func hovered() -> CaptureSession? {
+    private func hovered(includeHidden: Bool = false, includeAutoHidden: Bool = false) -> CaptureSession? {
         let point = NSEvent.mouseLocation
-        return sessions.reversed().first { !$0.hidden && $0.panel.frame.contains(point) }
+        for window in NSApp.orderedWindows {
+            if let session = sessions.first(where: { $0.panel === window }), !session.hidden,
+               (includeAutoHidden || !session.autoHidden), window.frame.contains(point) { return session }
+        }
+        if includeHidden {
+            return sessions.reversed().first { $0.hidden && $0.panel.frame.contains(point) }
+        }
+        return nil
     }
 
     private func toggleHoveredHidden() {
-        if let session = hovered() { session.toggleHidden(); lastHidden = session }
+        if let session = hovered(includeHidden: true, includeAutoHidden: true) {
+            session.toggleHidden()
+            if session.hidden { lastHidden = session }
+        }
         else if let lastHidden, lastHidden.hidden { lastHidden.toggleHidden() }
     }
 
-    private func hoverKey(_ key: UInt16) -> Bool {
-        let session = hovered() ?? ((key == 51 || key == 117) ? lastHidden : nil)
-        guard let session else { return false }
-        switch key {
-        case 3: session.cycleFPS()
-        case 2: session.toggleIdle()
-        case 24, 69: session.zoomIn()
-        case 27, 78: session.zoomOut()
-        case 51, 117: session.close()
-        default: return false
+    private func hoverAction(_ action: HoverAction) -> Bool {
+        guard let session = hovered(includeHidden: action == .close, includeAutoHidden: action == .close) else { return false }
+        DispatchQueue.main.async { [weak session] in
+            guard let session else { return }
+            switch action {
+            case .frameRate: session.showFrameRateMenu()
+            case .idleDetection: session.toggleIdle()
+            case .zoomIn: session.zoomIn()
+            case .zoomOut: session.zoomOut()
+            case .close: session.close()
+            }
         }
         return true
     }
 
     private func startSessionMonitoring() {
         guard ticker == nil else { return }
-        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let now = ProcessInfo.processInfo.systemUptime
                 Array(self.sessions).forEach { $0.tick(at: now) }
             }
         }
-        ticker?.tolerance = 0.2
+        timer.tolerance = 0.2
+        ticker = timer
+        RunLoop.main.add(timer, forMode: .common)
+        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { focusMonitor.observe(pid) }
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
         mouseGlobal = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in self?.pointerMoved() }
         mouseLocal = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in self?.pointerMoved(); return event }
@@ -239,12 +345,14 @@ final class ApplicationModel: ObservableObject {
 
     private func stopSessionMonitoring() {
         ticker?.invalidate(); ticker = nil
+        focusMonitor.stop()
         if let mouseGlobal { NSEvent.removeMonitor(mouseGlobal); self.mouseGlobal = nil }
         if let mouseLocal { NSEvent.removeMonitor(mouseLocal); self.mouseLocal = nil }
     }
 
     func shutdown() {
         selector.cancel()
+        preview.close()
         closeAll()
         stopSessionMonitoring()
         hotkeys.stop()

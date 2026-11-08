@@ -9,9 +9,17 @@ final class WindowCatalog: ObservableObject {
     @Published private(set) var windows: [SCWindow] = []
     @Published private(set) var loading = false
     @Published var error: String?
+    private var refreshTask: Task<Void, Never>?
 
     func refresh() async {
-        guard !loading else { return }
+        if let refreshTask { await refreshTask.value; return }
+        let task = Task { await loadWindows() }
+        refreshTask = task
+        await task.value
+        refreshTask = nil
+    }
+
+    private func loadWindows() async {
         loading = true
         defer { loading = false }
         do {
@@ -39,7 +47,7 @@ final class WindowCatalog: ObservableObject {
             let focused = candidates.filter { $0.owningApplication?.processID == preferredPID }
             if let match = focusedWindow(in: focused, pid: preferredPID) { return match }
             if let visible = focused.first(where: \.isOnScreen) { return visible }
-            throw RequestError.message("当前应用没有可捕获的窗口，请从窗口列表选择来源。")
+            throw RequestError.message("当前应用没有可捕获的窗口，请先聚焦需要捕获的窗口。")
         }
         guard !candidates.isEmpty else { throw RequestError.message("找不到匹配窗口，请确认应用已打开窗口。") }
         if candidates.count > 1, request.window != nil {
@@ -82,14 +90,17 @@ final class WindowCatalog: ObservableObject {
             app.activate(options: [])
             throw RequestError.message("需要辅助功能权限才能定位来源窗口。")
         }
-        let target = windows.min { matchScore($0, source) < matchScore($1, source) }!
+        let currentInfo = CGWindowListCopyWindowInfo(.optionIncludingWindow, source.windowID) as? [[String: Any]]
+        let bounds = currentInfo?.first?[kCGWindowBounds as String] as? [String: Any]
+        let currentFrame = bounds.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? source.frame
+        let target = windows.min { matchScore($0, source, frame: currentFrame) < matchScore($1, source, frame: currentFrame) }!
         AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         app.activate(options: [])
         let status = AXUIElementPerformAction(target, kAXRaiseAction as CFString)
         if status != .success { throw RequestError.message("无法聚焦来源窗口（\(status.rawValue)）。") }
     }
 
-    private func matchScore(_ element: AXUIElement, _ window: SCWindow) -> Double {
+    private func matchScore(_ element: AXUIElement, _ window: SCWindow, frame: CGRect? = nil) -> Double {
         var titleValue: CFTypeRef?, positionValue: CFTypeRef?, sizeValue: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleValue)
         AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue)
@@ -102,8 +113,9 @@ final class WindowCatalog: ObservableObject {
             AXValueGetValue(unsafeBitCast(value, to: AXValue.self), .cgSize, &size)
         }
         let titlePenalty: Double = (titleValue as? String) == window.title ? 0 : 100_000
-        return titlePenalty + abs(position.x - window.frame.minX) + abs(position.y - window.frame.minY)
-            + abs(size.width - window.frame.width) + abs(size.height - window.frame.height)
+        let target = frame ?? window.frame
+        return titlePenalty + abs(position.x - target.minX) + abs(position.y - target.minY)
+            + abs(size.width - target.width) + abs(size.height - target.height)
     }
 }
 #endif

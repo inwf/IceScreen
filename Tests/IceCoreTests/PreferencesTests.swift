@@ -11,7 +11,7 @@ final class PreferencesTests: XCTestCase {
         let restored = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(settings))
         XCTAssertEqual(restored, settings)
         XCTAssertEqual(restored.fps(for: "com.apple.Terminal"), 1)
-        XCTAssertEqual(restored.fps(for: "org.example.Video"), 15)
+        XCTAssertEqual(restored.fps(for: "org.example.Video"), 10)
         XCTAssertEqual(restored.shortcut.display, "fn P")
     }
 
@@ -22,7 +22,7 @@ final class PreferencesTests: XCTestCase {
         settings.idleSeconds = .infinity
         settings.preferredWidth = -200
         settings.normalize()
-        XCTAssertEqual(settings.defaultFPS, 15)
+        XCTAssertEqual(settings.defaultFPS, 10)
         XCTAssertEqual(settings.appFrameRates, ["valid": 60])
         XCTAssertEqual(settings.idleSeconds, 20)
         XCTAssertEqual(settings.preferredWidth, 160)

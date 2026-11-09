@@ -48,19 +48,19 @@ final class PanelChromeState: ObservableObject {
     func regions(in size: CGSize) -> [PanelControlRegion] {
         var items: [PanelControlRegion] = []
         if value.hovered {
-            items.append(.init(id: .close, frame: CGRect(x: 8, y: 8, width: 22, height: 22)))
-            if size.width >= 150 {
-                items.append(.init(id: .frameRate, frame: CGRect(x: 38, y: 9, width: 55, height: 20)))
-                if value.detection && size.width >= 220 {
-                    items.append(.init(id: .threshold, frame: CGRect(x: 99, y: 9, width: 44, height: 20)))
+            items.append(.init(id: .close, frame: CGRect(x: 8, y: 8, width: 30, height: 30)))
+            if size.width >= 190 {
+                items.append(.init(id: .frameRate, frame: CGRect(x: 46, y: 8, width: 64, height: 30)))
+                if value.detection && size.width >= 240 {
+                    items.append(.init(id: .threshold, frame: CGRect(x: 118, y: 8, width: 52, height: 30)))
                 }
             }
-            if size.height >= 70 {
-                items.append(.init(id: .resize, frame: CGRect(x: size.width - 25, y: size.height - 25, width: 21, height: 21)))
+            if size.height >= 80 {
+                items.append(.init(id: .resize, frame: CGRect(x: size.width - 34, y: size.height - 34, width: 26, height: 26)))
             }
         }
         if value.hovered || value.detection {
-            items.append(.init(id: .detection, frame: CGRect(x: size.width - 30, y: 8, width: 22, height: 22)))
+            items.append(.init(id: .detection, frame: CGRect(x: size.width - 38, y: 8, width: 30, height: 30)))
         }
         return items
     }
@@ -68,7 +68,10 @@ final class PanelChromeState: ObservableObject {
 
 struct PanelChrome: View {
     @ObservedObject var state: PanelChromeState
+    @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var detectionColor: Color { state.value.changeDetection ? .blue : .green }
 
@@ -134,16 +137,23 @@ struct PanelChrome: View {
     @ViewBuilder private func control(_ action: PanelAction) -> some View {
         if action == .resize {
             if #available(macOS 26.0, *) {
-                resizeLabel.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 5))
+                resizeLabel.glassEffect(.regular, in: .rect(cornerRadius: 8))
+                    .glassEffectID(action, in: glassNamespace)
+                    .glassEffectTransition(.materialize)
                     .allowsHitTesting(false)
             } else {
-                resizeLabel.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                resizeLabel.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     .allowsHitTesting(false)
             }
         } else if #available(macOS 26.0, *) {
             button(action)
                 .buttonStyle(.glassProminent)
+                .buttonSizing(.flexible)
                 .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
+                .tint(reduceTransparency ? Color.accentColor : Color.white.opacity(colorScheme == .dark ? 0.16 : 0.32))
+                .foregroundStyle(reduceTransparency ? Color.white : Color.primary)
+                .glassEffectID(action, in: glassNamespace)
+                .glassEffectTransition(.materialize)
         } else {
             button(action).buttonStyle(.bordered)
         }
@@ -153,15 +163,14 @@ struct PanelChrome: View {
         Image(systemName: "arrow.up.left.and.arrow.down.right")
             .font(.system(size: 11, weight: .heavy))
             .foregroundStyle(.primary)
-            .frame(width: 21, height: 21)
+            .frame(width: 26, height: 26)
     }
 
     private func button(_ action: PanelAction) -> some View {
         Button { state.perform?(action) } label: {
             label(action).contentShape(Rectangle())
         }
-        .controlSize(.mini)
-        .tint(tint(for: action))
+        .controlSize(.regular)
         .focusable(false)
         .help(action == .detection ? state.detectionHelp : action.label)
         .accessibilityLabel(action.label)
@@ -169,32 +178,23 @@ struct PanelChrome: View {
         .accessibilityIdentifier("panel.\(action.rawValue)")
     }
 
-    private func tint(for action: PanelAction) -> Color {
-        switch action {
-        case .close: return .red
-        case .frameRate: return .orange
-        case .threshold: return detectionColor
-        case .detection: return state.value.detection ? detectionColor : .gray
-        case .resize: return .accentColor
-        }
-    }
-
     @ViewBuilder private func label(_ action: PanelAction) -> some View {
         switch action {
         case .close:
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 12, height: 12)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 14, height: 14)
         case .frameRate:
             Text("\(state.value.fps) FPS")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
         case .threshold:
             Text("\(Int(state.value.threshold))s")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
         case .detection:
             Image(systemName: "circle.fill")
                 .font(.system(size: 10))
-                .frame(width: 12, height: 12)
+                .foregroundStyle(state.value.detection ? detectionColor : .secondary)
+                .frame(width: 14, height: 14)
                 .symbolEffect(.pulse, options: .repeating, isActive: state.value.idle && !reduceMotion)
         case .resize:
             EmptyView()
@@ -221,17 +221,26 @@ struct PanelEdgeScrim: View {
 
 final class PanelChromeHost: NSHostingView<PanelChrome> {
     let state: PanelChromeState
+    override var isOpaque: Bool { false }
 
     init(state: PanelChromeState) {
         self.state = state
         super.init(rootView: PanelChrome(state: state))
-        sizingOptions = []
+        configureHosting()
     }
 
     required init(rootView: PanelChrome) {
         state = rootView.state
         super.init(rootView: rootView)
+        configureHosting()
+    }
+    private func configureHosting() {
         sizingOptions = []
+        safeAreaRegions = []
+        wantsLayer = true
+        clipsToBounds = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.masksToBounds = false
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

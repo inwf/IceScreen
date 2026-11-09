@@ -525,9 +525,15 @@ final class PanelSurface: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
         layer?.cornerRadius = 12
-        layer?.masksToBounds = true
+        clipsToBounds = false
+        layer?.masksToBounds = false
+        frameView.layer?.cornerRadius = 12
+        frameView.layer?.masksToBounds = true
+        dim.wantsLayer = true
+        dim.layer?.cornerRadius = 12
+        dim.layer?.masksToBounds = true
         addSubview(frameView)
         addSubview(input)
         addSubview(dim)
@@ -541,6 +547,8 @@ final class PanelSurface: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     func applyAppearance(_ value: Preferences, enhanced: Bool) {
         layer?.cornerRadius = value.cornerRadius
+        frameView.layer?.cornerRadius = value.cornerRadius
+        dim.layer?.cornerRadius = value.cornerRadius
         frameView.enhanced = enhanced
         if showHints != value.showHoverHints { showHints = value.showHoverHints }
         if dimOnHover != value.dimOnHover { dimOnHover = value.dimOnHover }
@@ -581,7 +589,11 @@ final class PanelSurface: NSView {
             value.threshold = owner.changeDetection ? owner.changeSeconds : owner.idleSeconds
             value.zoomed = owner.viewport.magnification > 1.001
         }
-        if value != chromeState.value { chromeState.value = value }
+        if value != chromeState.value {
+            if value.hovered != chromeState.value.hovered && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                withAnimation(.easeInOut(duration: 0.16)) { chromeState.value = value }
+            } else { chromeState.value = value }
+        }
     }
     func update(title: String, status: String, idle: Bool, detection: Bool, message: String?) {
         input.toolTip = title + " · " + status

@@ -64,6 +64,8 @@ enum PanelEventChecks {
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }
         precondition(preview.surface.layer!.cornerRadius == 30 && abs(preview.surface.alphaValue - 0.4) < 0.001)
+        precondition(preview.surface.frameView.layer!.cornerRadius == 30 && preview.surface.frameView.layer!.masksToBounds,
+                     "The preview image must retain the requested corner clipping.")
         precondition(preview.surface.frameView.enhanced && preview.surface.hoverBlur == 0.8)
         precondition(preview.hitTest(NSPoint(x: 20, y: 20)) == nil, "The example must not perform floating-window actions.")
         preview.update(preferences, hovered: false, original: true, dark: false)
@@ -187,6 +189,15 @@ enum PanelEventChecks {
         }
 
         precondition(hit(24, 24) is PanelInput, "Hidden controls must leave content interactive.")
+        precondition(surface.layer!.masksToBounds == false,
+                     "The glass control hierarchy must remain outside the content clipping layer.")
+        precondition(surface.frameView.layer!.masksToBounds,
+                     "Capture content must still be clipped to its rounded shape.")
+        guard let chrome = surface.subviews.compactMap({ $0 as? PanelChromeHost }).first else {
+            fatalError("Missing floating control host.")
+        }
+        precondition(!chrome.isOpaque && !chrome.clipsToBounds,
+                     "The glass host must preserve transparency and the effect edges.")
         surface.setHovered(true)
         checkButton(24, 24, .close)
         checkButton(340, 19, .detection)

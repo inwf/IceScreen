@@ -89,6 +89,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = .clear
@@ -420,7 +421,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         menu.addItem(fpsItem)
         menu.addItem(.separator())
         add("鼠标移入时自动隐藏", #selector(toggleAutoHide), checked: autoHide)
-        add("悬停时背景变暗", #selector(toggleHoverDim), checked: surface.dimOnHover)
+        add("悬停时控件周围变暗", #selector(toggleHoverDim), checked: surface.dimOnHover)
         add("检测内容空闲", #selector(toggleIdle), checked: idleDetection)
         add("检测画面变化", #selector(toggleChangeDetection), checked: changeDetection)
         add("检测细微变化", #selector(toggleSensitiveDetection), checked: sensitiveDetection)
@@ -460,7 +461,7 @@ final class PanelSurface: NSView {
     var clickToFocus = true { didSet { updateHint() } }
     var previewEnabled = true { didSet { needsLayout = true; updateHint() } }
     var dimOnHover = true { didSet { updateHint() } }
-    var hoverBlur: Double = 0.35 { didSet { dim.blurStrength = hoverBlur } }
+    var hoverBlur: Double = 0.35 { didSet { dim.strength = hoverBlur } }
     weak var owner: CaptureSession? { didSet { input.owner = owner } }
 
     override init(frame: NSRect) {
@@ -508,6 +509,7 @@ final class PanelSurface: NSView {
         setHovered(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
@@ -580,13 +582,16 @@ final class PanelSurface: NSView {
             hint.text = click + "\n⌘ 拖动缩放" + (previewEnabled ? " · Space 预览" : "")
         } else { hint.text = "" }
         dim.isHidden = !hovered || !dimOnHover
-        dim.fullCoverage = !hint.text.isEmpty && bounds.width >= 210 && bounds.height >= 170
         input.toolTip = (clickToFocus ? "单击定位 · " : "") + "双击定位并关闭 · 双击 \(triggerLabel) 切换自动隐藏"
         needsLayout = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // AppKit 使用父视图坐标传入命中点，包括翻转坐标的内容视图。
-        let local = convert(point, from: superview)
+        target(at: convert(point, from: superview))
+    }
+    func target(atWindowPoint point: NSPoint) -> NSView? {
+        target(at: convert(point, from: nil))
+    }
+    private func target(at local: NSPoint) -> NSView? {
         guard !isHidden, bounds.contains(local) else { return nil }
         layoutSubtreeIfNeeded()
         for button in [closeButton, statusDot, focusButton, previewButton, menuButton]
@@ -628,11 +633,9 @@ final class PanelGlassControl: NSView {
         self.button = button
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.style = .regular
-            glass.cornerRadius = 16
-            glass.contentView = button
-            effect = glass
+            button.bezelStyle = .glass
+            button.isBordered = true
+            effect = button
         } else {
             effect = Self.legacyEffect(button)
         }
@@ -659,7 +662,7 @@ final class PanelGlassControl: NSView {
     override func layout() {
         super.layout()
         effect.frame = bounds
-        button.frame = effect.bounds
+        if effect !== button { button.frame = effect.bounds }
     }
 }
 
@@ -701,37 +704,37 @@ final class PanelHintView: NSVisualEffectView {
 }
 
 final class PanelDimView: NSView {
-    private let blur = NSVisualEffectView()
-    private let shade = CALayer()
-    private let coverage = CAShapeLayer()
-    var fullCoverage = true { didSet { needsLayout = true } }
-    var blurStrength: Double = 0.35 { didSet { blur.alphaValue = blurStrength; blur.isHidden = blurStrength == 0 } }
+    private let top = CAGradientLayer()
+    private let bottom = CAGradientLayer()
+    var strength: Double = 0.35 { didSet { updateColors() } }
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        blur.material = .hudWindow
-        blur.blendingMode = .withinWindow
-        blur.state = .active
-        blur.alphaValue = blurStrength
-        addSubview(blur)
-        shade.backgroundColor = NSColor.black.withAlphaComponent(0.2).cgColor
-        layer?.addSublayer(shade)
-        layer?.mask = coverage
+        top.startPoint = CGPoint(x: 0.5, y: 1)
+        top.endPoint = CGPoint(x: 0.5, y: 0)
+        bottom.startPoint = CGPoint(x: 0.5, y: 0)
+        bottom.endPoint = CGPoint(x: 0.5, y: 1)
+        layer?.addSublayer(top)
+        layer?.addSublayer(bottom)
+        updateColors()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-    override func layout() {
-        super.layout()
-        blur.frame = bounds
-        shade.frame = bounds
-        let path = CGMutablePath()
-        if fullCoverage { path.addRect(bounds) }
-        else {
-            path.addRect(CGRect(x: 0, y: 0, width: bounds.width, height: min(52, bounds.height)))
-            path.addRect(CGRect(x: 0, y: max(0, bounds.height - 52), width: bounds.width, height: min(52, bounds.height)))
-        }
+    private func updateColors() {
+        let colors = [NSColor.black.withAlphaComponent(strength * 0.4).cgColor,
+                      NSColor.black.withAlphaComponent(0).cgColor]
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        coverage.path = path
+        top.colors = colors
+        bottom.colors = colors
+        CATransaction.commit()
+    }
+    override func layout() {
+        super.layout()
+        let height = min(52, bounds.height * 0.25)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        top.frame = CGRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
+        bottom.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
         CATransaction.commit()
     }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -754,15 +757,15 @@ final class PanelInput: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        start = nil; moving = false; selection = nil
+        cancelGesture()
         dragEvent = event
         clickGesture.begin(at: event.locationInWindow)
         doubleClick = event.clickCount == 2
+        owner?.beginInteraction()
+        interacting = true
         if event.clickCount == 2 {
             owner?.doubleClicked(reset: event.modifierFlags.contains(.command))
         } else if event.modifierFlags.contains(.command) {
-            owner?.beginInteraction()
-            interacting = true
             start = convert(event.locationInWindow, from: nil)
         } else { moving = true }
     }
@@ -770,11 +773,8 @@ final class PanelInput: NSView {
         guard clickGesture.move(to: event.locationInWindow) else { return }
         if moving {
             moving = false
-            owner?.beginInteraction()
-            defer { owner?.endInteraction() }
+            defer { cancelGesture() }
             if let dragEvent { window?.performDrag(with: dragEvent) }
-            dragEvent = nil
-            clickGesture.cancel()
             return
         }
         guard let start else { return }
@@ -784,14 +784,18 @@ final class PanelInput: NSView {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
-        defer {
-            start = nil; moving = false; dragEvent = nil; selection = nil; needsDisplay = true
-            if interacting { owner?.endInteraction(); interacting = false }
-        }
+        defer { cancelGesture() }
         if clickGesture.end(at: event.locationInWindow), !doubleClick, start == nil { onClick?() }
         guard let selection, selection.width >= 6, selection.height >= 6, let owner else { return }
         owner.setViewport(owner.viewport.selecting(CGRect(x: selection.minX / bounds.width,
             y: selection.minY / bounds.height, width: selection.width / bounds.width, height: selection.height / bounds.height)))
+    }
+
+    func cancelGesture() {
+        clickGesture.cancel()
+        start = nil; moving = false; dragEvent = nil; selection = nil
+        needsDisplay = true
+        if interacting { interacting = false; owner?.endInteraction() }
     }
     override func scrollWheel(with event: NSEvent) {
         guard let owner else { return }

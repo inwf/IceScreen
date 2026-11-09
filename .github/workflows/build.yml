@@ -14,6 +14,9 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Check installation background typography
+        run: uv run scripts/render-dmg-background.py --check
       - name: Select toolchain
         run: |
           xcodebuild -version

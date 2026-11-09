@@ -82,6 +82,14 @@ enum PanelEventChecks {
             guard let button = hit(x, y) as? PanelButton else { fatalError("Expected a button at \(x), \(y).") }
             precondition(button.action == NSSelectorFromString(action), "Wrong floating panel action.")
             precondition(button.acceptsFirstMouse(for: nil), "Panel controls must accept the first click.")
+            precondition(surface.target(atWindowPoint: surface.convert(NSPoint(x: x, y: y), to: nil)) === button,
+                         "Window-coordinate targeting must preserve native button handling.")
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                precondition(button.bezelStyle == .glass && button.isBordered,
+                             "Floating controls must use the native Liquid Glass button bezel.")
+            }
+            #endif
         }
 
         precondition(hit(24, 24) is PanelInput, "Hidden controls must leave content interactive.")
@@ -99,29 +107,41 @@ enum PanelEventChecks {
         target.isReleasedWhenClosed = false
         defer { target.close() }
         surface.onContentClick = { target.makeKeyAndOrderFront(nil) }
-        let location = surface.convert(NSPoint(x: 180, y: 120), to: nil)
-        func event(_ type: NSEvent.EventType, clickCount: Int = 1) -> NSEvent {
-            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+        func event(_ type: NSEvent.EventType, at point: NSPoint = NSPoint(x: 180, y: 120),
+                   clickCount: Int = 1, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: surface.convert(point, to: nil), modifierFlags: modifiers,
                                timestamp: ProcessInfo.processInfo.systemUptime,
                                windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
                                clickCount: clickCount, pressure: 1)!
         }
-        panel.sendEvent(event(.leftMouseDown))
-        precondition(!target.isVisible, "Pressing before release must preserve the ability to drag.")
-        panel.sendEvent(event(.leftMouseUp))
-        precondition(target.isVisible, "A content click must focus its destination before mouse-up returns.")
-        target.orderOut(nil)
-        panel.sendEvent(event(.leftMouseDown, clickCount: 2))
-        panel.sendEvent(event(.leftMouseUp, clickCount: 2))
-        precondition(!target.isVisible, "The second click must not duplicate the single-click action.")
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            func glassCount(_ view: NSView) -> Int {
-                (view is NSGlassEffectView ? 1 : 0) + view.subviews.reduce(0) { $0 + glassCount($1) }
+        for hovered in [false, true] {
+            surface.setHovered(hovered)
+            for point in [NSPoint(x: 70, y: 58), NSPoint(x: 180, y: 120), NSPoint(x: 290, y: 184)] {
+                NSApp.sendEvent(event(.leftMouseDown, at: point))
+                precondition(!target.isVisible, "Pressing before release must preserve the ability to drag.")
+                NSApp.sendEvent(event(.leftMouseUp, at: point))
+                precondition(target.isVisible, "A content click must focus its destination before mouse-up returns.")
+                target.orderOut(nil)
             }
-            precondition(glassCount(surface) == 5, "All floating controls must have native Liquid Glass material.")
         }
-        #endif
+        NSApp.sendEvent(event(.leftMouseDown, clickCount: 2))
+        NSApp.sendEvent(event(.leftMouseUp, clickCount: 2))
+        precondition(!target.isVisible, "The second click must not duplicate the single-click action.")
+        NSApp.sendEvent(event(.leftMouseDown, modifiers: [.command]))
+        NSApp.sendEvent(event(.leftMouseDragged, at: NSPoint(x: 240, y: 170), modifiers: [.command]))
+        NSApp.sendEvent(event(.leftMouseUp, at: NSPoint(x: 240, y: 170), modifiers: [.command]))
+        precondition(!target.isVisible, "Region selection must not focus the destination.")
+        NSApp.sendEvent(event(.leftMouseDown))
+        panel.orderOut(nil)
+        panel.orderFrontRegardless()
+        NSApp.sendEvent(event(.leftMouseUp))
+        precondition(!target.isVisible, "Hiding a panel must cancel the pending click.")
+        for shade in surface.subviews.compactMap({ $0 as? PanelDimView }) {
+            precondition(shade.subviews.isEmpty, "Edge shading must not install a full-content material view.")
+            let center = CGPoint(x: shade.bounds.midX, y: shade.bounds.midY)
+            precondition(shade.layer!.sublayers!.allSatisfy { !$0.frame.contains(center) },
+                         "Hover shading must leave the center of the capture untouched.")
+        }
         precondition(hit(-1, 120) == nil, "Points outside the surface must not receive input.")
         surface.isHidden = true
         precondition(hit(180, 120) == nil, "Hidden surfaces must not receive input.")

@@ -136,7 +136,7 @@ struct PanelChrome: View {
     @ViewBuilder private func control(_ action: PanelAction) -> some View {
         if action == .resize {
             if #available(macOS 26.0, *) {
-                resizeLabel.glassEffect(.regular, in: .rect(cornerRadius: 8))
+                resizeLabel.glassEffect(.clear, in: .rect(cornerRadius: 8))
                     .glassEffectID(action, in: glassNamespace)
                     .glassEffectTransition(.materialize)
                     .allowsHitTesting(false)
@@ -146,10 +146,9 @@ struct PanelChrome: View {
             }
         } else if #available(macOS 26.0, *) {
             button(action)
-                .buttonStyle(.glass)
+                .buttonStyle(.glass(.clear.interactive()))
                 .buttonSizing(.flexible)
                 .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
-                .foregroundStyle(.primary)
                 .glassEffectID(action, in: glassNamespace)
                 .glassEffectTransition(.materialize)
         } else {
@@ -205,14 +204,10 @@ struct PanelEdgeScrim: View {
     let strength: Double
 
     var body: some View {
-        Rectangle()
-            .fill(.ultraThinMaterial)
-            .overlay(.black.opacity(0.6))
-            .mask(LinearGradient(colors: [.black, .clear],
-                                 startPoint: top ? .top : .bottom,
-                                 endPoint: top ? .bottom : .top))
+        LinearGradient(colors: [.black.opacity(0.6), .clear],
+                       startPoint: top ? .top : .bottom,
+                       endPoint: top ? .bottom : .top)
             .opacity(strength)
-            .environment(\.colorScheme, .dark)
             .allowsHitTesting(false)
     }
 }

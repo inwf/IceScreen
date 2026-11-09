@@ -10,6 +10,7 @@ struct AppearanceSettings: View {
     @State private var showOriginal = false
     @State private var showImagePicker = false
     @StateObject private var images = AppearanceImageStore()
+    private let defaults = Preferences()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,10 +40,12 @@ struct AppearanceSettings: View {
             Divider()
             Form {
                 Section("形状与透明度") {
-                    LabeledContent("圆角", value: "\(Int(store.value.cornerRadius)) pt")
-                    Slider(value: $store.value.cornerRadius, in: 0...30, step: 1) { Text("圆角") }
-                    LabeledContent("透明度", value: "\(Int(store.value.panelOpacity * 100))%")
-                    Slider(value: $store.value.panelOpacity, in: 0.35...1, step: 0.05) { Text("透明度") }
+                    DefaultValueSlider(title: "圆角", value: $store.value.cornerRadius,
+                                       range: 0...30, step: 1, defaultValue: defaults.cornerRadius,
+                                       format: { "\(Int($0.rounded())) pt" })
+                    DefaultValueSlider(title: "透明度", value: $store.value.panelOpacity,
+                                       range: 0.35...1, step: 0.05, defaultValue: defaults.panelOpacity,
+                                       format: { "\(Int(($0 * 100).rounded()))%" })
                 }
                 Section {
                     Toggle("增强对比度和锐度", isOn: $store.value.enhanceContrast)
@@ -52,8 +55,9 @@ struct AppearanceSettings: View {
                 Section {
                     Toggle("鼠标移入时自动隐藏", isOn: $store.value.autoHide)
                     Toggle("悬停时控件周围变暗", isOn: $store.value.dimOnHover)
-                    LabeledContent("边缘效果强度", value: "\(Int(store.value.hoverBlur * 100))%")
-                    Slider(value: $store.value.hoverBlur, in: 0...1, step: 0.05) { Text("边缘效果强度") }
+                    DefaultValueSlider(title: "边缘效果强度", value: $store.value.hoverBlur,
+                                       range: 0...1, step: 0.05, defaultValue: defaults.hoverBlur,
+                                       format: { "\(Int(($0 * 100).rounded()))%" })
                         .disabled(!store.value.dimOnHover)
                     Toggle("显示操作提示", isOn: $store.value.showHoverHints)
                 } header: { Text("悬停外观") } footer: {
@@ -72,6 +76,51 @@ struct AppearanceSettings: View {
             Button("好", role: .cancel) { images.error = nil }
         } message: { Text(images.error ?? "") }
         .onDisappear { images.cancelLoading() }
+    }
+}
+
+struct DefaultValueSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let defaultValue: Double
+    let format: (Double) -> String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title).frame(width: 84, height: 22, alignment: .leading)
+            VStack(spacing: 0) {
+                Slider(value: $value, in: range, step: step) { Text(title) }
+                    .labelsHidden()
+                    .frame(height: 22)
+                    .accessibilityValue(format(value))
+                GeometryReader { geometry in
+                    let fraction = (defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound)
+                    let center = 10 + (geometry.size.width - 20) * fraction
+                    let labelWidth = min(88, geometry.size.width)
+                    let origin = min(max(0, center - labelWidth / 2), geometry.size.width - labelWidth)
+                    Button { value = defaultValue } label: {
+                        VStack(spacing: 3) {
+                            Circle().fill(.secondary).frame(width: 5, height: 5)
+                                .offset(x: center - origin - labelWidth / 2)
+                            Text("默认 \(format(defaultValue))")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        .frame(width: labelWidth, height: 28, alignment: .top)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: origin)
+                    .help("恢复\(title)默认值：\(format(defaultValue))")
+                    .accessibilityLabel("恢复\(title)默认值")
+                    .accessibilityValue(format(defaultValue))
+                    .accessibilityIdentifier("appearance.default.\(title)")
+                }.frame(height: 28)
+            }.frame(minWidth: 140)
+            Text(format(value)).monospacedDigit()
+                .frame(width: 50, height: 22, alignment: .trailing)
+        }
     }
 }
 

@@ -211,6 +211,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertNil(HoverAction.resolve(keyCode: 2, repeated: true))
         XCTAssertNil(HoverAction.resolve(keyCode: 51, repeated: true))
         XCTAssertEqual(HoverAction.resolve(keyCode: 24, repeated: true), .zoomIn)
+        XCTAssertEqual(HoverAction.resolve(keyCode: 29, repeated: false), .resetZoom)
+        XCTAssertEqual(HoverAction.resolve(keyCode: 82, repeated: false), .resetZoom)
+        XCTAssertNil(HoverAction.resolve(keyCode: 29, repeated: true))
+        XCTAssertEqual(HoverAction.resolve(keyCode: 123, repeated: true), .seekBackward)
+        XCTAssertEqual(HoverAction.resolve(keyCode: 124, repeated: true), .seekForward)
     }
 
     func testTallRegionStaysOnDisplayWithoutToolbarOffset() {

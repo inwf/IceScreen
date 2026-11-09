@@ -170,7 +170,11 @@ final class HotkeyMonitor {
                 return true
             }
         }
-        if flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskSecondaryFn]).isEmpty,
+        // macOS 为方向键自身附加 secondaryFn，不能把它当成用户按住 fn。
+        let hoverModifiers: CGEventFlags = code == 123 || code == 124
+            ? [.maskCommand, .maskAlternate, .maskControl]
+            : [.maskCommand, .maskAlternate, .maskControl, .maskSecondaryFn]
+        if flags.intersection(hoverModifiers).isEmpty,
            let action = HoverAction.resolve(keyCode: code, repeated: repeated), onHoverAction?(action) == true {
             consumedKeys.insert(code)
             return true

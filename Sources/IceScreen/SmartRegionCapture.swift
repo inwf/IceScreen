@@ -30,7 +30,7 @@ enum SmartRegionCapture {
             try VNImageRequestHandler(cgImage: image).perform([request])
             let rectangles = (request.results ?? []).map { CaptureCandidate(rect: SmartCapture.fromVision($0.boundingBox)) }
             let selection = SmartCapture.select(at: normalized, candidates: semantic + rectangles)
-            guard !(semantic + rectangles).isEmpty else { return selection }
+            guard SmartCapture.detected(at: normalized, candidates: semantic + rectangles) != nil else { return selection }
             return trimLetterbox(image, selection: selection, point: normalized)
         }.value
     }
@@ -41,7 +41,7 @@ enum SmartRegionCapture {
         AXUIElementSetMessagingTimeout(root, 0.08)
         var element: AXUIElement?
         guard AXUIElementCopyElementAtPosition(root, Float(point.x), Float(point.y), &element) == .success else { return [] }
-        let roles: Set<String> = ["AXImage", "AXVideo", "AXTable", "AXTextArea", "AXScrollArea"]
+        let roles: Set<String> = ["AXImage", "AXVideo", "AXTable", "AXTextArea"]
         var result: [CaptureCandidate] = []
         for _ in 0..<8 {
             guard let current = element else { break }
@@ -57,7 +57,7 @@ enum SmartRegionCapture {
                     let rect = CGRect(x: (p.x - source.frame.minX) / source.frame.width,
                                       y: (p.y - source.frame.minY) / source.frame.height,
                                       width: s.width / source.frame.width, height: s.height / source.frame.height)
-                    result.append(.init(rect: rect, semantic: role as? String != "AXScrollArea"))
+                    result.append(.init(rect: rect, semantic: true))
                 }
             }
             guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
@@ -73,7 +73,6 @@ enum SmartRegionCapture {
         let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
             guard let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                                           bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: 0) else { return false }
-            context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: 1, y: -1)
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }

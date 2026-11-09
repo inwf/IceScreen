@@ -12,7 +12,8 @@ final class PanelHintPresenter {
         close()
         let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: anchor.midX, y: anchor.midY)) }
         guard let visible = screen?.visibleFrame else { return }
-        let size = CGSize(width: 220, height: 44)
+        let size = CGSize(width: min(message.count > 14 ? 380 : 220, visible.width - 16),
+                          height: message.count > 14 ? 88 : 44)
         let origin = CGPoint(x: min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8),
                              y: min(max(anchor.midY - size.height / 2, visible.minY + 8), visible.maxY - size.height - 8))
         let window = FloatingPanel(contentRect: CGRect(origin: origin, size: size),
@@ -34,7 +35,7 @@ final class PanelHintPresenter {
             window.animator().alphaValue = 1
         }
         dismissal = Task { [weak self, weak window] in
-            do { try await Task.sleep(for: .seconds(1.6)) } catch { return }
+            do { try await Task.sleep(for: .seconds(message.count > 14 ? 4 : 1.6)) } catch { return }
             guard let self, let window, self.panel === window else { return }
             await NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
@@ -66,7 +67,8 @@ private struct PanelHint: View {
     }
     private var label: some View {
         Text(message).font(.system(size: 13, weight: .medium))
-            .padding(.horizontal, 18).frame(height: 36)
+            .multilineTextAlignment(.center).lineLimit(3)
+            .padding(.horizontal, 18).padding(.vertical, 10)
             .accessibilityAddTraits(.updatesFrequently)
     }
 }

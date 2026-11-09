@@ -8,6 +8,10 @@ public struct CaptureCandidate: Sendable {
 
 public enum SmartCapture {
     public static func select(at point: CGPoint, candidates: [CaptureCandidate]) -> Viewport {
+        if let rect = detected(at: point, candidates: candidates) { return Viewport(rect: rect) }
+        return Viewport(rect: CGRect(x: point.x - 0.125, y: point.y - 0.125, width: 0.25, height: 0.25))
+    }
+    public static func detected(at point: CGPoint, candidates: [CaptureCandidate]) -> CGRect? {
         let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
         let valid = candidates.filter {
             let r = $0.rect
@@ -20,8 +24,7 @@ public enum SmartCapture {
             if $0.semantic != $1.semantic { return $0.semantic }
             return $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height
         }
-        if let match = ordered.first { return Viewport(rect: match.rect.intersection(unit)) }
-        return Viewport(rect: CGRect(x: point.x - 0.125, y: point.y - 0.125, width: 0.25, height: 0.25))
+        return ordered.first?.rect.intersection(unit)
     }
 
     public static func fromVision(_ rect: CGRect) -> CGRect {

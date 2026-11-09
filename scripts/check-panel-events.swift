@@ -93,10 +93,13 @@ enum PanelEventChecks {
         precondition(hit(24, 24) is PanelInput, "Hidden controls must leave content interactive.")
         surface.setHovered(true)
         checkButton(24, 24, .close)
-        checkButton(308, 24, .detection)
+        checkButton(340, 19, .detection)
+        checkButton(65, 19, .frameRate)
         precondition(hit(24, 216) is PanelInput, "The lower-left content must receive clicks.")
-        checkButton(296, 216, .preview)
-        checkButton(336, 216, .menu)
+        checkButton(345, 225, .resize)
+        surface.update(title: "Source", status: "10 FPS", idle: false, detection: true, message: nil)
+        checkButton(120, 19, .threshold)
+        surface.update(title: "Source", status: "10 FPS", idle: false, detection: false, message: nil)
         guard let content = hit(180, 120) as? PanelInput else { fatalError("The hint must not intercept content clicks.") }
         precondition(content.acceptsFirstMouse(for: nil), "Content must accept the first click.")
         precondition(!content.mouseDownCanMoveWindow, "Content must own mouse-down and mouse-up delivery.")
@@ -143,11 +146,27 @@ enum PanelEventChecks {
         panel.orderFrontRegardless()
         NSApp.sendEvent(event(.leftMouseUp))
         precondition(!target.isVisible, "Hiding a panel must cancel the pending click.")
+        surface.setHovered(true)
+        surface.layoutSubtreeIfNeeded()
+        let originalFrame = panel.frame
+        let handlePoint = NSPoint(x: 345, y: 225)
+        NSApp.postEvent(event(.leftMouseUp, at: NSPoint(x: 375, y: 245)), atStart: true)
+        NSApp.postEvent(event(.leftMouseDragged, at: NSPoint(x: 375, y: 245)), atStart: true)
+        NSApp.sendEvent(event(.leftMouseDown, at: handlePoint))
+        precondition(panel.frame.width > originalFrame.width && panel.frame.height > originalFrame.height,
+                     "Dragging the corner handle outward must enlarge the panel.")
+        precondition(abs(panel.frame.minX - originalFrame.minX) < 1 && abs(panel.frame.maxY - originalFrame.maxY) < 1,
+                     "Corner resizing must keep the top-left corner fixed.")
+        precondition(abs(panel.frame.width / panel.frame.height - originalFrame.width / originalFrame.height) < 0.01,
+                     "Corner resizing must preserve the content aspect ratio.")
+        precondition(!target.isVisible, "Resizing must not activate the content destination.")
+        panel.setFrame(originalFrame, display: true)
+        surface.layoutSubtreeIfNeeded()
         for shade in surface.subviews.compactMap({ $0 as? PanelDimView }) {
-            precondition(shade.subviews.isEmpty, "Edge shading must not install a full-content material view.")
             let center = CGPoint(x: shade.bounds.midX, y: shade.bounds.midY)
-            precondition(shade.layer!.sublayers!.allSatisfy { !$0.frame.contains(center) },
+            precondition(shade.subviews.allSatisfy { !$0.frame.contains(center) },
                          "Hover shading must leave the center of the capture untouched.")
+            precondition(shade.hitTest(center) == nil, "Edge effects must not intercept content input.")
         }
         precondition(hit(-1, 120) == nil, "Points outside the surface must not receive input.")
         surface.isHidden = true
@@ -156,18 +175,19 @@ enum PanelEventChecks {
 
         surface.previewEnabled = false
         precondition(hit(24, 216) is PanelInput, "The lower-left content must remain interactive.")
-        checkButton(336, 216, .menu)
+        checkButton(345, 225, .resize)
         panel.setContentSize(NSSize(width: 120, height: 80))
         surface.layoutSubtreeIfNeeded()
         checkButton(24, 24, .close)
-        checkButton(96, 24, .menu)
+        checkButton(96, 24, .detection)
+        precondition(hit(65, 19) is PanelInput, "Compact panels must preserve content between the corner controls.")
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 240))
         panel.contentView = container
         surface.frame = NSRect(x: 30, y: 40, width: 120, height: 80)
         container.addSubview(surface)
         checkButton(24, 24, .close)
-        checkButton(96, 24, .menu)
+        checkButton(96, 24, .detection)
         print("Passed native control targeting, first-click acceptance, compact layout, and flipped-coordinate checks.")
     }
 

@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import ScreenCaptureKit
+import SwiftUI
 import OSLog
 import IceCore
 
@@ -242,6 +243,27 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         frameRateMenu().popUp(positioning: nil, at: point, in: surface)
     }
 
+    func showThresholdMenu() {
+        beginInteraction()
+        defer { endInteraction() }
+        let menu = NSMenu()
+        let current = changeDetection ? changeSeconds : idleSeconds
+        for seconds in [2, 5, 10, 20, 30, 60, 120] {
+            let item = NSMenuItem(title: "\(seconds) 秒", action: #selector(chooseThreshold(_:)), keyEquivalent: "")
+            item.target = self; item.tag = seconds
+            item.state = current == Double(seconds) ? .on : .off
+            menu.addItem(item)
+        }
+        let point = surface.convert(panel.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        menu.popUp(positioning: nil, at: point, in: surface)
+    }
+
+    @objc private func chooseThreshold(_ sender: NSMenuItem) {
+        if changeDetection { changeSeconds = Double(sender.tag) }
+        else { idleSeconds = Double(sender.tag) }
+        configureDetection()
+    }
+
     @objc func togglePaused() {
         visibility.paused.toggle()
         failure = nil
@@ -407,6 +429,18 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
     func windowDidChangeBackingProperties(_ notification: Notification) { configure() }
 
+    func beginHandleResize() {
+        resizeTask?.cancel()
+        userIsResizing = true
+        beginInteraction()
+    }
+
+    func endHandleResize() {
+        userIsResizing = false
+        if !closed { onResize?(Double(panel.frame.width)); configure() }
+        endInteraction()
+    }
+
     @objc func chooseFPS(_ sender: NSMenuItem) { onFrameRate?(bundleID, sender.tag) }
 
     private func frameRateMenu() -> NSMenu {
@@ -472,9 +506,9 @@ final class PanelSurface: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
     let frameView = FrameView(frame: .zero)
     private let input = PanelInput(frame: .zero)
+    private let resizeInput = PanelResizeHandle(frame: .zero)
     private let chromeState = PanelChromeState()
     private var controls: PanelChromeHost!
-    private let hint = PanelHintView()
     private let dim = PanelDimView()
     private var hintTask: Task<Void, Never>?
     private var hintsExpired = false
@@ -486,10 +520,10 @@ final class PanelSurface: NSView {
     var showHints = true { didSet { updateHint() } }
     var triggerLabel = "fn" { didSet { updateHint() } }
     var clickToFocus = true { didSet { updateHint() } }
-    var previewEnabled = true { didSet { updateControls(); updateHint() } }
+    var previewEnabled = true { didSet { updateHint() } }
     var dimOnHover = true { didSet { updateHint() } }
     var hoverBlur: Double = 0.35 { didSet { dim.strength = hoverBlur } }
-    weak var owner: CaptureSession? { didSet { input.owner = owner } }
+    weak var owner: CaptureSession? { didSet { input.owner = owner; resizeInput.owner = owner } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -500,7 +534,7 @@ final class PanelSurface: NSView {
         addSubview(frameView)
         addSubview(input)
         addSubview(dim)
-        addSubview(hint)
+        addSubview(resizeInput)
         controls = PanelChromeHost(state: chromeState)
         controls.frame = bounds
         addSubview(controls)
@@ -524,22 +558,31 @@ final class PanelSurface: NSView {
         input.frame = frameView.frame
         dim.frame = bounds
         controls.frame = bounds
-        let hintWidth = min(300, max(0, bounds.width - 32))
-        hint.frame = CGRect(x: (bounds.width - hintWidth) / 2, y: (bounds.height - 64) / 2, width: hintWidth, height: 64)
-        hint.isHidden = bounds.width < 210 || bounds.height < 170 || hint.text.isEmpty
+        let resize = chromeState.regions(in: bounds.size).first { $0.id == .resize }
+        resizeInput.frame = resize?.frame ?? .zero
+        resizeInput.isHidden = resize == nil
     }
     private func updateControls() {
         var value = chromeState.value
         value.hovered = hovered
         value.detection = detectionEnabled
-        value.preview = previewEnabled
+        value.showHints = showHints
+        value.showModifierHints = hovered && showHints && !hintsExpired
+        value.clickToFocus = clickToFocus
+        value.trigger = triggerLabel
+        value.message = statusMessage
+        if let owner {
+            value.fps = owner.fps
+            value.changeDetection = owner.changeDetection
+            value.threshold = owner.changeDetection ? owner.changeSeconds : owner.idleSeconds
+            value.zoomed = owner.viewport.magnification > 1.001
+        }
         if value != chromeState.value { chromeState.value = value }
     }
     func update(title: String, status: String, idle: Bool, detection: Bool, message: String?) {
         input.toolTip = title + " · " + status
         detectionEnabled = detection
         if chromeState.value.idle != idle { chromeState.value.idle = idle }
-        updateControls()
         statusMessage = message ?? (idle ? "内容暂时没有变化" : nil)
         updateHint()
         needsLayout = true
@@ -547,7 +590,6 @@ final class PanelSurface: NSView {
     func setHovered(_ value: Bool) {
         guard hovered != value else { return }
         hovered = value
-        updateControls()
         hintsExpired = false
         hintTask?.cancel()
         if value {
@@ -562,11 +604,7 @@ final class PanelSurface: NSView {
     }
 
     private func updateHint() {
-        if let statusMessage { hint.text = statusMessage }
-        else if hovered && showHints && !hintsExpired {
-            let click = clickToFocus ? "单击定位 · 双击定位并关闭" : "双击定位并关闭"
-            hint.text = click + "\n⌘ 拖动缩放" + (previewEnabled ? " · Space 预览" : "")
-        } else { hint.text = "" }
+        updateControls()
         dim.isHidden = !hovered || !dimOnHover
         input.toolTip = (clickToFocus ? "单击定位 · " : "") + "双击定位并关闭 · 双击 \(triggerLabel) 切换自动隐藏"
         needsLayout = true
@@ -584,14 +622,16 @@ final class PanelSurface: NSView {
     private func target(at local: NSPoint) -> NSView? {
         guard !isHidden, bounds.contains(local) else { return nil }
         layoutSubtreeIfNeeded()
+        if controls.region(at: controls.convert(local, from: self))?.id == .resize { return resizeInput }
         return controls.hitTest(local) ?? input
     }
     private func perform(_ action: PanelAction) {
         switch action {
         case .close: owner?.close()
-        case .preview: owner?.showPreview()
+        case .frameRate: owner?.showFrameRateMenu()
+        case .threshold: owner?.showThresholdMenu()
         case .detection: showDetectionMenu()
-        case .menu: showMenu()
+        case .resize: break
         }
     }
     @objc private func showDetectionMenu() {
@@ -600,76 +640,32 @@ final class PanelSurface: NSView {
         guard let rect = chromeState.regions(in: bounds.size).first(where: { $0.id == .detection })?.frame else { return }
         owner?.detectionMenu().popUp(positioning: nil, at: CGPoint(x: rect.minX, y: rect.maxY + 4), in: self)
     }
-    @objc private func showMenu() {
-        owner?.beginInteraction()
-        defer { owner?.endInteraction() }
-        guard let rect = chromeState.regions(in: bounds.size).first(where: { $0.id == .menu })?.frame else { return }
-        owner?.makeMenu().popUp(positioning: nil, at: CGPoint(x: rect.minX, y: rect.maxY + 4), in: self)
-    }
-}
-
-final class PanelHintView: NSVisualEffectView {
-    private let label = NSTextField(wrappingLabelWithString: "")
-    var text: String {
-        get { label.stringValue }
-        set { label.stringValue = newValue }
-    }
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        material = .hudWindow
-        blendingMode = .withinWindow
-        state = .active
-        wantsLayer = true
-        layer?.cornerRadius = 14
-        layer?.masksToBounds = true
-        label.alignment = .center
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .labelColor
-        addSubview(label)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-    override func layout() {
-        super.layout()
-        label.preferredMaxLayoutWidth = max(0, bounds.width - 20)
-        let height = min(bounds.height - 12, label.fittingSize.height)
-        label.frame = NSRect(x: 10, y: (bounds.height - height) / 2, width: bounds.width - 20, height: height)
-    }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 final class PanelDimView: NSView {
-    private let top = CAGradientLayer()
-    private let bottom = CAGradientLayer()
-    var strength: Double = 0.35 { didSet { updateColors() } }
+    override var isFlipped: Bool { true }
+    private let top = NSHostingView(rootView: PanelEdgeScrim(top: true, strength: 0.35))
+    private let bottom = NSHostingView(rootView: PanelEdgeScrim(top: false, strength: 0.35))
+    var strength: Double = 0.35 {
+        didSet {
+            guard strength != oldValue else { return }
+            top.rootView = PanelEdgeScrim(top: true, strength: strength)
+            bottom.rootView = PanelEdgeScrim(top: false, strength: strength)
+        }
+    }
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
-        top.startPoint = CGPoint(x: 0.5, y: 1)
-        top.endPoint = CGPoint(x: 0.5, y: 0)
-        bottom.startPoint = CGPoint(x: 0.5, y: 0)
-        bottom.endPoint = CGPoint(x: 0.5, y: 1)
-        layer?.addSublayer(top)
-        layer?.addSublayer(bottom)
-        updateColors()
+        top.sizingOptions = []
+        bottom.sizingOptions = []
+        addSubview(top)
+        addSubview(bottom)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-    private func updateColors() {
-        let colors = [NSColor.black.withAlphaComponent(strength * 0.6).cgColor,
-                      NSColor.black.withAlphaComponent(0).cgColor]
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        top.colors = colors
-        bottom.colors = colors
-        CATransaction.commit()
-    }
     override func layout() {
         super.layout()
         let height = min(52, bounds.height * 0.25)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        top.frame = CGRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
-        bottom.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
-        CATransaction.commit()
+        top.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
+        bottom.frame = CGRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
     }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -232,7 +232,13 @@ final class ApplicationModel: ObservableObject {
             guard let source = catalog.window(at: point) else { return }
             let x = (point.x - source.frame.minX) / source.frame.width
             let y = (point.y - source.frame.minY) / source.frame.height
-            start(source, viewport: Viewport(rect: CGRect(x: x - 0.125, y: y - 0.125, width: 0.25, height: 0.25)))
+            do {
+                let viewport = settings.value.smartRegionCapture
+                    ? try await SmartRegionCapture.detect(source: source, at: point)
+                    : Viewport(rect: CGRect(x: x - 0.125, y: y - 0.125, width: 0.25, height: 0.25))
+                guard !Task.isCancelled, generation == captureGeneration || settings.value.multiWindow else { return }
+                start(source, viewport: viewport)
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
     }
 

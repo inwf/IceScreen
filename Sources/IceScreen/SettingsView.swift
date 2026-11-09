@@ -88,6 +88,9 @@ struct SettingsView: View {
         Form {
             Section("显示与位置") {
                 Toggle("多窗口模式", isOn: $store.value.multiWindow)
+                Toggle("快速捕获时智能识别局部边界", isOn: $store.value.smartRegionCapture)
+                Text("识别鼠标所在的图片、视频或内容区域，并裁去对称黑白边框。没有合适边界时放大鼠标附近的区域。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("出现位置", selection: $store.value.panelPosition) {
                     ForEach(ZoomAnchor.allCases, id: \.self) { Text(positionName($0)).tag($0) }
                 }

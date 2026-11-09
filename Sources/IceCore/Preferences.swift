@@ -95,6 +95,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var sourceFocusBehavior: SourceFocusBehavior = .keep
     public var showOnFullscreenSpaces = true
     public var quickRegionCapture = true
+    public var smartRegionCapture = true
     public var cornerRadius: Double = 14
     public var showHoverHints = true
     public var panelPosition: ZoomAnchor = .bottomRight
@@ -133,6 +134,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         case changeDetection, changeSeconds, sensitiveDetection, detectionNotifications, detectionCommand, detectionCommandTimeout
         case dimOnHover, hoverBlur, panelOpacity, showMenuBarIcon
         case contrastStrength, sharpnessStrength
+        case smartRegionCapture
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,6 +163,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         sourceFocusBehavior = try c.decodeIfPresent(SourceFocusBehavior.self, forKey: .sourceFocusBehavior) ?? sourceFocusBehavior
         showOnFullscreenSpaces = try c.decodeIfPresent(Bool.self, forKey: .showOnFullscreenSpaces) ?? showOnFullscreenSpaces
         quickRegionCapture = try c.decodeIfPresent(Bool.self, forKey: .quickRegionCapture) ?? quickRegionCapture
+        smartRegionCapture = try c.decodeIfPresent(Bool.self, forKey: .smartRegionCapture) ?? smartRegionCapture
         cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? cornerRadius
         showHoverHints = try c.decodeIfPresent(Bool.self, forKey: .showHoverHints) ?? showHoverHints
         panelPosition = try c.decodeIfPresent(ZoomAnchor.self, forKey: .panelPosition) ?? panelPosition

@@ -48,7 +48,7 @@ enum IceScreenApp {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private let initialRequest: CaptureRequest?
     private var model: ApplicationModel!
     private var settingsWindow: NSWindow?
@@ -92,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func showSettings() {
+        NSApp.setActivationPolicy(.regular)
         if settingsWindow == nil {
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 820, height: 640),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -99,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.toolbarStyle = .unified
             window.contentMinSize = NSSize(width: 740, height: 540)
             window.isReleasedWhenClosed = false
+            window.delegate = self
             window.contentViewController = NSHostingController(rootView: SettingsView(model: model, store: model.settings))
             window.setFrameAutosaveName("IceScreen.Settings")
             window.center()
@@ -107,6 +109,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.checkPermissions()
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard notification.object as AnyObject? === settingsWindow else { return }
+        NSApp.setActivationPolicy(.accessory)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

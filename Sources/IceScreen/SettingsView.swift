@@ -95,11 +95,6 @@ struct SettingsView: View {
                 }
                 Toggle("Space 预览来源窗口", isOn: $store.value.quickLook)
             }
-            Section {
-                Toggle("鼠标移入时自动隐藏", isOn: $store.value.autoHide)
-            } footer: {
-                Text("悬停时双击 \(store.value.triggerModifier.display) 可随时开关自动隐藏。浮窗透明时仍可按 Delete 关闭，或双击 \(store.value.triggerModifier.display) 恢复显示和操作。")
-            }
             frameRateSettings
         }.formStyle(.grouped)
     }
@@ -244,10 +239,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Text("让你关注的窗口，留在眼前。")
-            Text("原生窗口捕获 · 本机处理 · GPL-3.0-or-later")
+            Text("happy · 好朋友")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
-            Text("Copyright © 2026 IceScreen contributors").font(.caption2).foregroundStyle(.tertiary)
+            VStack(spacing: 4) {
+                Text("Copyright © 2026 IceScreen contributors")
+                Text("GPL-3.0-or-later")
+            }.font(.caption2).foregroundStyle(.tertiary)
         }.padding(30).frame(maxWidth: .infinity)
     }
 

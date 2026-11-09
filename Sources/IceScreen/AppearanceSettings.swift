@@ -3,11 +3,13 @@ import AppKit
 import SwiftUI
 import CoreVideo
 import IceCore
+import UniformTypeIdentifiers
 
 struct AppearanceSettings: View {
     @ObservedObject var store: SettingsStore
-    @State private var showHover = false
     @State private var showOriginal = false
+    @State private var showImagePicker = false
+    @StateObject private var images = AppearanceImageStore()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,16 +17,22 @@ struct AppearanceSettings: View {
                 HStack {
                     Text("即时预览").font(.headline)
                     Spacer()
-                    Toggle("悬停效果", isOn: $showHover).toggleStyle(.button)
+                    if images.isLoading { ProgressView().controlSize(.small) }
+                    Button("选择图片…") { showImagePicker = true }
+                    if images.image != nil {
+                        Button("恢复示例") { images.reset() }
+                    }
                     Toggle("对比原图", isOn: $showOriginal).toggleStyle(.button)
                         .help("临时查看未增强的示例画面，不改变浮窗设置")
                 }
                 .controlSize(.small)
-                AppearancePreview(preferences: store.value, hovered: showHover, original: showOriginal)
+                AppearancePreview(preferences: store.value, original: showOriginal, image: images.image)
                     .frame(height: 204)
                     .accessibilityLabel("浮窗外观示例")
                     .accessibilityValue("圆角 \(Int(store.value.cornerRadius)) 点，透明度 \(Int(store.value.panelOpacity * 100))%，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")")
-                Text(showOriginal ? "正在对比原始画面 · 圆角和透明度仍按当前设置显示" : "内置文字与图形示例 · 调整会同时应用到当前浮窗")
+                Text(showOriginal ? "正在对比原始画面 · 圆角和透明度仍按当前设置显示" : (images.image?.name ?? "内置文字与图形示例"))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Text(store.value.autoHide ? "鼠标移入画面预览自动隐藏，移出后恢复。" : "鼠标移入画面预览按钮、边缘阴影和操作提示。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 12)
@@ -42,28 +50,40 @@ struct AppearanceSettings: View {
                     Text("观察预览中的小字、细线和渐变，使用「对比原图」查看增强前后的差异。")
                 }
                 Section {
+                    Toggle("鼠标移入时自动隐藏", isOn: $store.value.autoHide)
                     Toggle("悬停时控件周围变暗", isOn: $store.value.dimOnHover)
                     LabeledContent("边缘效果强度", value: "\(Int(store.value.hoverBlur * 100))%")
                     Slider(value: $store.value.hoverBlur, in: 0...1, step: 0.05) { Text("边缘效果强度") }
                         .disabled(!store.value.dimOnHover)
                     Toggle("显示操作提示", isOn: $store.value.showHoverHints)
                 } header: { Text("悬停外观") } footer: {
-                    Text("打开预览上方的「悬停效果」查看按钮、边缘材质和操作提示。")
+                    Text("预览跟随鼠标自动展示当前设置。实际浮窗隐藏后，可双击 \(store.value.triggerModifier.display) 恢复显示和操作，或按 Delete 关闭。")
                 }
             }.formStyle(.grouped)
         }
+        .fileImporter(isPresented: $showImagePicker, allowedContentTypes: [.image]) { result in
+            switch result {
+            case .success(let url): images.load(url)
+            case .failure(let error):
+                if (error as? CocoaError)?.code != .userCancelled { images.error = error.localizedDescription }
+            }
+        }
+        .alert("无法读取图片", isPresented: Binding(get: { images.error != nil }, set: { if !$0 { images.error = nil } })) {
+            Button("好", role: .cancel) { images.error = nil }
+        } message: { Text(images.error ?? "") }
+        .onDisappear { images.cancelLoading() }
     }
 }
 
 struct AppearancePreview: NSViewRepresentable {
     let preferences: Preferences
-    let hovered: Bool
     let original: Bool
+    let image: AppearanceImage?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeNSView(context: Context) -> AppearancePreviewView { AppearancePreviewView(frame: .zero) }
     func updateNSView(_ view: AppearancePreviewView, context: Context) {
-        view.update(preferences, hovered: hovered, original: original, dark: colorScheme == .dark)
+        view.update(preferences, original: original, dark: colorScheme == .dark, image: image)
     }
     static func dismantleNSView(_ view: AppearancePreviewView, coordinator: ()) { view.releasePreview() }
 }
@@ -73,6 +93,10 @@ final class AppearancePreviewView: NSView {
     let surface = PanelSurface(frame: .zero)
     private var sample: CVPixelBuffer?
     private var dark = false
+    private var imageID: UUID?
+    private var preferences = Preferences()
+    private var tracking: NSTrackingArea?
+    private(set) var pointerInside = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -83,31 +107,71 @@ final class AppearancePreviewView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func update(_ preferences: Preferences, hovered: Bool, original: Bool, dark: Bool) {
-        if sample == nil || self.dark != dark {
-            self.dark = dark
-            sample = dark ? AppearanceSample.dark : AppearanceSample.light
-            needsDisplay = true
+    func update(_ preferences: Preferences, original: Bool, dark: Bool, image: AppearanceImage? = nil) {
+        let appearanceChanged = self.dark != dark
+        self.dark = dark
+        self.preferences = preferences
+        if appearanceChanged { needsDisplay = true }
+        if sample == nil || imageID != image?.id || (image == nil && appearanceChanged) {
+            imageID = image?.id
+            sample = image?.pixels ?? (dark ? AppearanceSample.dark : AppearanceSample.light)
+            surface.frameView.layer?.isOpaque = image == nil
             if let sample { surface.frameView.display(sample) }
+            needsLayout = true
         }
         surface.applyAppearance(preferences, enhanced: preferences.enhanceContrast && !original)
-        surface.alphaValue = preferences.panelOpacity
         if surface.clickToFocus != preferences.clickToFocus { surface.clickToFocus = preferences.clickToFocus }
         if surface.triggerLabel != preferences.triggerModifier.display { surface.triggerLabel = preferences.triggerModifier.display }
-        surface.setHovered(hovered)
+        applyHover(animated: false)
     }
 
     override func layout() {
         super.layout()
-        let width = max(0, min(320, bounds.width - 48, (bounds.height - 24) * 16 / 9))
-        surface.frame = CGRect(x: (bounds.width - width) / 2, y: (bounds.height - width * 9 / 16) / 2,
-                               width: width, height: width * 9 / 16)
+        let ratio = sample.map { CGFloat(CVPixelBufferGetWidth($0)) / CGFloat(CVPixelBufferGetHeight($0)) } ?? 16 / 9
+        let width = max(0, min(320, bounds.width - 48, (bounds.height - 24) * ratio))
+        surface.frame = CGRect(x: (bounds.width - width) / 2, y: (bounds.height - width / ratio) / 2,
+                               width: width, height: width / ratio)
         surface.layoutSubtreeIfNeeded()
+        updateTrackingAreas()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil, let sample { surface.frameView.display(sample) }
+        if window == nil { setPointerInside(false) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if window != nil, tracking?.rect == surface.frame { return }
+        if let tracking { removeTrackingArea(tracking) }
+        tracking = nil
+        guard let window, !surface.frame.isEmpty else { setPointerInside(false); return }
+        let area = NSTrackingArea(rect: surface.frame, options: [.mouseEnteredAndExited, .activeAlways, .enabledDuringMouseDrag], owner: self)
+        addTrackingArea(area)
+        tracking = area
+        setPointerInside(surface.frame.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
+    }
+
+    override func mouseEntered(with event: NSEvent) { setPointerInside(true) }
+    override func mouseExited(with event: NSEvent) { setPointerInside(false) }
+    override func mouseDown(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+
+    private func setPointerInside(_ value: Bool) {
+        guard pointerInside != value else { return }
+        pointerInside = value
+        applyHover(animated: true)
+    }
+
+    private func applyHover(animated: Bool) {
+        surface.setHovered(pointerInside)
+        let opacity = pointerInside && preferences.autoHide ? 0 : preferences.panelOpacity
+        guard surface.alphaValue != opacity else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0
+            surface.animator().alphaValue = opacity
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -124,12 +188,24 @@ final class AppearancePreviewView: NSView {
         }
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        guard !isHidden, bounds.contains(local) else { return nil }
+        let windowPoint = convert(local, to: nil)
+        if surface.alphaValue > 0, let action = surface.control(atWindowPoint: windowPoint), action != .resize {
+            return surface.target(atWindowPoint: windowPoint)
+        }
+        return self
+    }
 
     func releasePreview() {
         surface.setHovered(false)
         surface.frameView.releaseFrame()
         sample = nil
+        imageID = nil
+        pointerInside = false
+        if let tracking { removeTrackingArea(tracking) }
+        tracking = nil
     }
 }
 

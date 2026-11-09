@@ -2,6 +2,8 @@ import AppKit
 import CoreVideo
 import QuartzCore
 import IceCore
+import ImageIO
+import UniformTypeIdentifiers
 
 @main
 enum PanelEventChecks {
@@ -56,7 +58,7 @@ enum PanelEventChecks {
         preferences.hoverBlur = 0.8
         var rendered = false
         preview.surface.frameView.onFirstFrameRendered = { rendered = true }
-        preview.update(preferences, hovered: true, original: false, dark: false)
+        preview.update(preferences, original: false, dark: false)
         preview.layoutSubtreeIfNeeded()
         let deadline = Date().addingTimeInterval(3)
         while !rendered {
@@ -67,16 +69,101 @@ enum PanelEventChecks {
         precondition(preview.surface.frameView.layer!.cornerRadius == 30 && preview.surface.frameView.layer!.masksToBounds,
                      "The preview image must retain the requested corner clipping.")
         precondition(preview.surface.frameView.enhanced && preview.surface.hoverBlur == 0.8)
-        precondition(preview.hitTest(NSPoint(x: 20, y: 20)) == nil, "The example must not perform floating-window actions.")
-        preview.update(preferences, hovered: false, original: true, dark: false)
+        let contentPoint = preview.convert(CGPoint(x: preview.bounds.midX, y: preview.bounds.midY), to: preview.superview)
+        precondition(preview.hitTest(contentPoint) === preview, "Preview content must not route to floating-window gestures.")
+        func hover(_ inside: Bool) {
+            let event = NSEvent.enterExitEvent(with: inside ? .mouseEntered : .mouseExited,
+                                              location: .zero, modifierFlags: [], timestamp: 0,
+                                              windowNumber: window.windowNumber, context: nil,
+                                              eventNumber: 0, trackingNumber: 0, userData: nil)!
+            if inside { preview.mouseEntered(with: event) } else { preview.mouseExited(with: event) }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            precondition(preview.pointerInside == inside)
+        }
+        hover(true)
+        let shade = preview.surface.subviews.compactMap { $0 as? PanelDimView }.first!
+        precondition(!shade.isHidden, "Pointer entry must show the configured edge shade without a toggle.")
+        preferences.dimOnHover = false
+        preview.update(preferences, original: false, dark: false)
+        precondition(shade.isHidden, "Disabling the shade while hovered must update the preview immediately.")
+        preferences.autoHide = true
+        preview.update(preferences, original: false, dark: false)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        precondition(preview.surface.alphaValue == 0, "Auto-hide must hide the entire sample under the pointer.")
+        precondition(!preview.trackingAreas.isEmpty, "The stationary parent must retain hover tracking while the sample is invisible.")
+        hover(false)
+        precondition(abs(preview.surface.alphaValue - 0.4) < 0.001, "Pointer exit must restore the selected opacity.")
+        preferences.autoHide = false
+        preview.update(preferences, original: true, dark: false)
         precondition(!preview.surface.frameView.enhanced && preferences.enhanceContrast,
                      "Comparing the original must leave the actual preference enabled.")
-        preview.update(preferences, hovered: true, original: false, dark: true)
+        preview.update(preferences, original: false, dark: true)
         precondition(preview.surface.frameView.enhanced)
         window.setContentSize(NSSize(width: 480, height: 220))
         preview.layoutSubtreeIfNeeded()
         precondition(preview.bounds.contains(preview.surface.frame), "Resizing must retain the full sample inside the preview.")
-        print("Passed native appearance sample rendering, live settings, original comparison, and input isolation checks.")
+        checkImportedAppearance(in: preview, preferences: preferences)
+        print("Passed native appearance rendering, pointer hover and hiding, image decoding, live settings, and input isolation checks.")
+    }
+
+    @MainActor private static func checkImportedAppearance(in preview: AppearancePreviewView, preferences: Preferences) {
+        let folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".build/tmp/appearance-\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let png = folder.appendingPathComponent("sample.png")
+            let context = CGContext(data: nil, width: 1600, height: 800, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.clear(CGRect(x: 0, y: 0, width: 1600, height: 800))
+            context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 800, height: 800))
+            let destination = CGImageDestinationCreateWithURL(png as CFURL, UTType.png.identifier as CFString, 1, nil)!
+            CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+            precondition(CGImageDestinationFinalize(destination))
+            let image = try AppearanceImage.load(from: png)
+            precondition(CVPixelBufferGetWidth(image.pixels) == 1024 && CVPixelBufferGetHeight(image.pixels) == 512,
+                         "Imported images must be downsampled without changing their aspect ratio.")
+            CVPixelBufferLockBaseAddress(image.pixels, .readOnly)
+            let bytes = CVPixelBufferGetBaseAddress(image.pixels)!.assumingMemoryBound(to: UInt8.self)
+            let row = CVPixelBufferGetBytesPerRow(image.pixels) * 256
+            precondition(bytes[row + 128 * 4 + 2] == 255 && bytes[row + 128 * 4 + 3] == 255)
+            precondition(bytes[row + 900 * 4 + 3] == 0, "PNG alpha must survive decoding.")
+            CVPixelBufferUnlockBaseAddress(image.pixels, .readOnly)
+            var rendered = false
+            preview.surface.frameView.onFirstFrameRendered = { rendered = true }
+            preview.update(preferences, original: false, dark: false, image: image)
+            preview.layoutSubtreeIfNeeded()
+            let deadline = Date().addingTimeInterval(3)
+            while !rendered {
+                precondition(Date() < deadline, "An imported image must render through the real Metal path.")
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            precondition(abs(preview.surface.frame.width / preview.surface.frame.height - 2) < 0.001)
+            precondition(preview.surface.frameView.layer!.isOpaque == false)
+            preview.update(preferences, original: false, dark: true, image: image)
+            preview.layoutSubtreeIfNeeded()
+            precondition(abs(preview.surface.frame.width / preview.surface.frame.height - 2) < 0.001,
+                         "An appearance change must keep the imported image.")
+            preview.update(preferences, original: false, dark: true)
+            preview.layoutSubtreeIfNeeded()
+            precondition(abs(preview.surface.frame.width / preview.surface.frame.height - 16.0 / 9) < 0.001,
+                         "Restoring the example must restore its original aspect ratio.")
+            let rotated = folder.appendingPathComponent("portrait.jpg")
+            let jpeg = CGImageDestinationCreateWithURL(rotated as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
+            CGImageDestinationAddImage(jpeg, context.makeImage()!, [kCGImagePropertyOrientation: 6] as CFDictionary)
+            precondition(CGImageDestinationFinalize(jpeg))
+            let portrait = try AppearanceImage.load(from: rotated)
+            precondition(CVPixelBufferGetWidth(portrait.pixels) == 512 && CVPixelBufferGetHeight(portrait.pixels) == 1024,
+                         "Image import must honor EXIF orientation.")
+            let invalid = folder.appendingPathComponent("invalid.png")
+            try Data("invalid image".utf8).write(to: invalid)
+            do {
+                _ = try AppearanceImage.load(from: invalid)
+                fatalError("Unreadable images must return an actionable error.")
+            } catch AppearanceImage.ImageError.unreadable {}
+        } catch { fatalError("Appearance import check failed: \(error)") }
     }
 
     @MainActor private static func checkPreviewTransition(in screen: NSRect) {

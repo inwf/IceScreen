@@ -31,10 +31,9 @@ final class PanelChromeState: ObservableObject {
         var fps = 10
         var threshold = 20.0
         var showHints = true
-        var showModifierHints = false
         var clickToFocus = true
+        var previewEnabled = true
         var zoomed = false
-        var trigger = "fn"
         var message: String?
     }
     @Published var value = Value()
@@ -57,7 +56,7 @@ final class PanelChromeState: ObservableObject {
                 }
             }
             if size.height >= 80 {
-                items.append(.init(id: .resize, frame: CGRect(x: size.width - 34, y: size.height - 34, width: 26, height: 26)))
+                items.append(.init(id: .resize, frame: CGRect(x: size.width - 38, y: size.height - 38, width: 30, height: 30)))
             }
         }
         if value.hovered || value.detection {
@@ -99,17 +98,24 @@ struct PanelChrome: View {
     }
 
     @ViewBuilder private func hints(in size: CGSize) -> some View {
-        if state.value.hovered && state.value.showHints && size.width >= 210 && size.height >= 100 {
-            VStack(spacing: 2) {
-                Text(state.value.zoomed ? "⌘ 拖动放大 · ⌘ 双击重置" : "⌘ 拖动放大 · ⌫ 关闭")
-                Text(state.value.clickToFocus ? "单击定位 · 双击定位并关闭" : "双击定位并关闭")
+        if state.value.hovered && state.value.showHints && state.value.message == nil && size.width >= 210 && size.height >= 110 {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 12) {
+                    hintKey(state.value.clickToFocus ? "单击" : "双击",
+                            state.value.clickToFocus ? "返回来源" : "返回并关闭")
+                    if state.value.previewEnabled && size.width >= 300 {
+                        hintKey("Space", "预览")
+                    }
+                }
+                Text(state.value.zoomed ? "拖动移动 · ⌘ 双击恢复画面" : "拖动移动 · ⌘ 拖动放大")
+                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.85))
             }
-            .font(.system(size: 11))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.34), radius: 1)
+            .shadow(color: .black.opacity(0.5), radius: 1)
             .lineLimit(1)
-            .frame(width: size.width - 48, height: 30)
-            .position(x: size.width / 2, y: size.height - 23)
+            .frame(width: size.width - 66, height: 38, alignment: .leading)
+            .position(x: 12 + (size.width - 66) / 2, y: size.height - 30)
         }
         if let message = state.value.message {
             Text(message)
@@ -120,28 +126,28 @@ struct PanelChrome: View {
                 .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
                 .frame(maxWidth: max(0, size.width - 32))
                 .position(x: size.width / 2, y: size.height / 2)
-        } else if state.value.showModifierHints && size.width >= 210 && size.height >= 140 {
-            VStack(spacing: 6) {
-                Text("轻按 \(state.value.trigger) 隐藏")
-                Text("双击 \(state.value.trigger) 切换自动隐藏")
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white.opacity(0.85))
-            .shadow(color: .black.opacity(0.6), radius: 2)
-            .frame(width: size.width - 32)
-            .position(x: size.width / 2, y: size.height / 2)
+        }
+    }
+
+    private func hintKey(_ key: String, _ action: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 4).padding(.vertical, 2)
+                .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 4))
+            Text(action)
         }
     }
 
     @ViewBuilder private func control(_ action: PanelAction) -> some View {
         if action == .resize {
             if #available(macOS 26.0, *) {
-                resizeLabel.glassEffect(.clear, in: .rect(cornerRadius: 8))
+                resizeLabel.glassEffect(.clear, in: .circle)
                     .glassEffectID(action, in: glassNamespace)
                     .glassEffectTransition(.materialize)
                     .allowsHitTesting(false)
             } else {
-                resizeLabel.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                resizeLabel.background(.regularMaterial, in: Circle())
                     .allowsHitTesting(false)
             }
         } else if #available(macOS 26.0, *) {
@@ -160,7 +166,7 @@ struct PanelChrome: View {
         Image(systemName: "arrow.up.left.and.arrow.down.right")
             .font(.system(size: 11, weight: .heavy))
             .foregroundStyle(.primary)
-            .frame(width: 26, height: 26)
+            .frame(width: 30, height: 30)
     }
 
     private func button(_ action: PanelAction) -> some View {

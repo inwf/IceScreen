@@ -507,8 +507,6 @@ final class PanelSurface: NSView {
     private let chromeState = PanelChromeState()
     private var controls: PanelChromeHost!
     private let dim = PanelDimView()
-    private var hintTask: Task<Void, Never>?
-    private var hintsExpired = false
     private var statusMessage: String?
     private var tracking: NSTrackingArea?
     private var hovered = false
@@ -579,9 +577,8 @@ final class PanelSurface: NSView {
         value.hovered = hovered
         value.detection = detectionEnabled
         value.showHints = showHints
-        value.showModifierHints = hovered && showHints && !hintsExpired
         value.clickToFocus = clickToFocus
-        value.trigger = triggerLabel
+        value.previewEnabled = previewEnabled
         value.message = statusMessage
         if let owner {
             value.fps = owner.fps
@@ -606,15 +603,6 @@ final class PanelSurface: NSView {
     func setHovered(_ value: Bool) {
         guard hovered != value else { return }
         hovered = value
-        hintsExpired = false
-        hintTask?.cancel()
-        if value {
-            hintTask = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(3)) } catch { return }
-                self?.hintsExpired = true
-                self?.updateHint()
-            }
-        }
         updateHint()
         needsLayout = true
     }
@@ -622,7 +610,7 @@ final class PanelSurface: NSView {
     private func updateHint() {
         updateControls()
         dim.isHidden = !hovered || !dimOnHover
-        input.toolTip = (clickToFocus ? "单击定位 · " : "") + "双击定位并关闭 · 双击 \(triggerLabel) 切换自动隐藏"
+        input.toolTip = (clickToFocus ? "单击返回来源 · " : "") + "双击返回并关闭 · 轻按 \(triggerLabel) 隐藏 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭"
         needsLayout = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {

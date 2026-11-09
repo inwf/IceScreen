@@ -68,6 +68,7 @@ struct AppearanceSettings: View {
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                         .disabled(!store.value.dimOnHover)
                     Toggle("显示操作提示", isOn: $store.value.showHoverHints)
+                        .help("鼠标移入时在左下角显示常用操作，并跟随单击定位、Space 预览和缩放状态更新。")
                 } header: { Text("悬停外观") } footer: {
                     Text("预览跟随鼠标自动展示当前设置。实际浮窗隐藏后，可双击 \(store.value.triggerModifier.display) 恢复显示和操作，或按 Delete 关闭。")
                 }
@@ -193,6 +194,7 @@ final class AppearancePreviewView: NSView {
         }
         surface.applyAppearance(preferences, enhanced: preferences.enhanceContrast && !original)
         if surface.clickToFocus != preferences.clickToFocus { surface.clickToFocus = preferences.clickToFocus }
+        if surface.previewEnabled != preferences.quickLook { surface.previewEnabled = preferences.quickLook }
         if surface.triggerLabel != preferences.triggerModifier.display { surface.triggerLabel = preferences.triggerModifier.display }
         applyHover(animated: false)
     }

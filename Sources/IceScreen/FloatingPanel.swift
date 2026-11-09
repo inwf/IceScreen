@@ -205,10 +205,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         clickToFocus = value.clickToFocus
         surface.clickToFocus = value.clickToFocus
         surface.previewEnabled = value.quickLook
-        surface.layer?.cornerRadius = value.cornerRadius
-        surface.showHints = value.showHoverHints
-        surface.dimOnHover = value.dimOnHover
-        surface.hoverBlur = value.hoverBlur
+        surface.applyAppearance(value, enhanced: enhanced)
         panelOpacity = value.panelOpacity
         if !autoHidden { panel.alphaValue = panelOpacity }
         triggerLabel = value.triggerModifier.display
@@ -542,6 +539,13 @@ final class PanelSurface: NSView {
         updateHint()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    func applyAppearance(_ value: Preferences, enhanced: Bool) {
+        layer?.cornerRadius = value.cornerRadius
+        frameView.enhanced = enhanced
+        if showHints != value.showHoverHints { showHints = value.showHoverHints }
+        if dimOnHover != value.dimOnHover { dimOnHover = value.dimOnHover }
+        if hoverBlur != value.hoverBlur { hoverBlur = value.hoverBlur }
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

@@ -1,6 +1,7 @@
 import AppKit
 import CoreVideo
 import QuartzCore
+import IceCore
 
 @main
 enum PanelEventChecks {
@@ -36,7 +37,44 @@ enum PanelEventChecks {
         checkSurface(in: lower)
         checkCaptureDetection()
         checkPreviewTransition(in: screen.visibleFrame)
+        checkAppearancePreview(in: screen.visibleFrame)
         print("Passed 5 native NSPanel hit-testing checks.")
+    }
+
+    @MainActor private static func checkAppearancePreview(in screen: NSRect) {
+        let window = NSWindow(contentRect: NSRect(x: screen.midX - 220, y: screen.midY - 110, width: 440, height: 220),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let preview = AppearancePreviewView(frame: NSRect(x: 0, y: 0, width: 440, height: 220))
+        window.contentView = preview
+        window.orderFrontRegardless()
+        defer { preview.releasePreview(); window.close() }
+        var preferences = Preferences()
+        preferences.cornerRadius = 30
+        preferences.panelOpacity = 0.4
+        preferences.enhanceContrast = true
+        preferences.hoverBlur = 0.8
+        var rendered = false
+        preview.surface.frameView.onFirstFrameRendered = { rendered = true }
+        preview.update(preferences, hovered: true, original: false, dark: false)
+        preview.layoutSubtreeIfNeeded()
+        let deadline = Date().addingTimeInterval(3)
+        while !rendered {
+            precondition(Date() < deadline, "Appearance sample must render through the real Metal renderer.")
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        precondition(preview.surface.layer!.cornerRadius == 30 && abs(preview.surface.alphaValue - 0.4) < 0.001)
+        precondition(preview.surface.frameView.enhanced && preview.surface.hoverBlur == 0.8)
+        precondition(preview.hitTest(NSPoint(x: 20, y: 20)) == nil, "The example must not perform floating-window actions.")
+        preview.update(preferences, hovered: false, original: true, dark: false)
+        precondition(!preview.surface.frameView.enhanced && preferences.enhanceContrast,
+                     "Comparing the original must leave the actual preference enabled.")
+        preview.update(preferences, hovered: true, original: false, dark: true)
+        precondition(preview.surface.frameView.enhanced)
+        window.setContentSize(NSSize(width: 480, height: 220))
+        preview.layoutSubtreeIfNeeded()
+        precondition(preview.bounds.contains(preview.surface.frame), "Resizing must retain the full sample inside the preview.")
+        print("Passed native appearance sample rendering, live settings, original comparison, and input isolation checks.")
     }
 
     @MainActor private static func checkPreviewTransition(in screen: NSRect) {

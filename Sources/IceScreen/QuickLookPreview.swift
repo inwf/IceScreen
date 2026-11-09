@@ -8,6 +8,9 @@ final class QuickLookPreview {
     private var dismissing: PreviewPresentation?
     private var pipeline: CapturePipeline?
     private var gesture = PreviewGesture()
+    private var mediaGesture = MediaSpaceGesture()
+    private var mediaHoldTask: Task<Void, Never>?
+    private weak var mediaSession: CaptureSession?
     private var generation = 0
     private weak var session: CaptureSession?
     private var mouseGlobal: Any?
@@ -15,6 +18,19 @@ final class QuickLookPreview {
     private(set) var sourceID: CGWindowID?
     var isPresented: Bool { gesture.isPresented }
     var onError: ((Error) -> Void)?
+
+    func pressMedia(_ session: CaptureSession, previewEnabled: Bool) {
+        close(animated: false)
+        mediaSession = session
+        mediaGesture.press(at: ProcessInfo.processInfo.systemUptime)
+        guard previewEnabled else { return }
+        mediaHoldTask = Task { [weak self, weak session] in
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            guard let self, let session, self.mediaGesture.hold(at: ProcessInfo.processInfo.systemUptime) else { return }
+            self.gesture.present()
+            self.schedulePresentation(session)
+        }
+    }
 
     func press(_ session: CaptureSession) {
         guard gesture.press(at: ProcessInfo.processInfo.systemUptime) else { close(); return }
@@ -72,11 +88,20 @@ final class QuickLookPreview {
     }
 
     func release() {
+        if mediaGesture.pressedAt != nil {
+            let target = mediaSession
+            let toggle = mediaGesture.release(at: ProcessInfo.processInfo.systemUptime)
+            close()
+            if toggle { target?.mediaAction("toggle") }
+            return
+        }
         gesture.release(at: ProcessInfo.processInfo.systemUptime)
         if !gesture.isPresented { close() }
     }
 
     func close(animated: Bool = true) {
+        mediaHoldTask?.cancel(); mediaHoldTask = nil
+        mediaGesture.cancel(); mediaSession = nil
         generation += 1
         gesture.close()
         pipeline?.close(); pipeline = nil

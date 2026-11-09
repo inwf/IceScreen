@@ -38,6 +38,7 @@ struct SettingsView: View {
                     case .floatingWindows: floatingWindows
                     case .appearance: AppearanceSettings(store: store)
                     case .detection: detection
+                    case .media: media
                     case .keyboard: keyboard
                     case .about: about
                     }
@@ -134,6 +135,25 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var media: some View {
+        Form {
+            Section("播放控制") {
+                Toggle("显示来源媒体的播放控制", isOn: $store.value.mediaControls)
+                Toggle("显示进度条并允许调整进度", isOn: $store.value.mediaSeek).disabled(!store.value.mediaControls)
+                Toggle("轻按 Space 播放或暂停", isOn: $store.value.mediaSpace).disabled(!store.value.mediaControls)
+                Text("鼠标悬停浮窗时显示播放、暂停、上一首和下一首。媒体需要向系统提供播放状态；直播或禁止跳转的内容不显示进度条。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("快捷操作") {
+                LabeledContent("轻按 Space", value: "播放或暂停")
+                LabeledContent("长按 Space", value: "预览来源窗口，松开关闭")
+                LabeledContent("← / →", value: "后退 / 前进 5 秒")
+                Text("长按预览遵循“浮窗”页面的 Space 预览开关。未识别到媒体的浮窗继续使用原有的 Space 预览操作。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.formStyle(.grouped)
     }
 
     private var detection: some View {
@@ -292,13 +312,14 @@ struct SettingsView: View {
 }
 
 private enum SettingsPage: CaseIterable, Hashable, Identifiable {
-    case general, keyboard, floatingWindows, appearance, detection, about
+    case general, keyboard, floatingWindows, appearance, media, detection, about
     var id: Self { self }
     var title: String {
         switch self {
         case .general: return "通用"
         case .floatingWindows: return "浮窗"
         case .appearance: return "外观"
+        case .media: return "媒体"
         case .detection: return "检测与自动化"
         case .keyboard: return "快捷键"
         case .about: return "关于"
@@ -309,6 +330,7 @@ private enum SettingsPage: CaseIterable, Hashable, Identifiable {
         case .general: return "gearshape"
         case .floatingWindows: return "pip"
         case .appearance: return "rectangle.on.rectangle.angled"
+        case .media: return "playpause"
         case .detection: return "waveform.path"
         case .keyboard: return "keyboard"
         case .about: return "info.circle"

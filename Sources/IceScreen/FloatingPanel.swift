@@ -44,6 +44,10 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var onFrameRate: ((String, Int) -> Void)?
     var onResize: ((Double) -> Void)?
     var onChange: (() -> Void)?
+    var onMedia: ((MediaRequest) -> Void)?
+    private(set) var mediaSnapshot: MediaSnapshot?
+    private var mediaEnabled = true
+    private(set) var mediaSeekEnabled = true
     private var resizeTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
     private var closeAfterFocus = false
@@ -212,6 +216,9 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         idleSeconds = value.idleSeconds
         changeSeconds = value.changeSeconds
         clickToFocus = value.clickToFocus
+        mediaEnabled = value.mediaControls
+        mediaSeekEnabled = value.mediaSeek
+        if !mediaEnabled { mediaSnapshot = nil }
         surface.clickToFocus = value.clickToFocus
         surface.previewEnabled = value.quickLook
         surface.applyAppearance(value, enhanced: enhanced)
@@ -220,7 +227,25 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         triggerLabel = value.triggerModifier.display
         surface.triggerLabel = triggerLabel
         panel.collectionBehavior = value.showOnFullscreenSpaces ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary] : [.canJoinAllSpaces, .stationary]
+        updateStatus()
     }
+
+    func updateMedia(_ snapshots: [MediaSnapshot]) {
+        mediaSnapshot = mediaEnabled ? MediaSnapshot.match(snapshots, pid: source.owningApplication?.processID ?? 0,
+                                                          bundleID: bundleID, title: title) : nil
+        updateStatus()
+    }
+    func mediaAction(_ action: String, position: Double? = nil) {
+        guard let mediaSnapshot else { return }
+        if action == "seek", (!mediaSeekEnabled || !mediaSnapshot.seekable) { return }
+        onMedia?(.init(id: mediaSnapshot.id, action: action, position: position))
+    }
+    @discardableResult func seekMedia(relative seconds: Double) -> Bool {
+        guard mediaSeekEnabled, let snapshot = mediaSnapshot,
+              let position = snapshot.seekPosition(relative: seconds, at: Date().timeIntervalSince1970) else { return false }
+        mediaAction("seek", position: position); return true
+    }
+    func showHint(_ text: String) { hint.show(text, near: panel.frame) }
 
     func sourceFocusChanged(windowID: CGWindowID?, behavior: SourceFocusBehavior) {
         let focused = windowID == source.windowID
@@ -550,6 +575,10 @@ final class PanelSurface: NSView {
         controls.frame = bounds
         addSubview(controls)
         chromeState.perform = { [weak self] action in self?.perform(action) }
+        chromeState.seek = { [weak self] in self?.owner?.mediaAction("seek", position: $0) }
+        chromeState.seeking = { [weak self] active in
+            if active { self?.owner?.beginInteraction() } else { self?.owner?.endInteraction() }
+        }
         updateHint()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -595,6 +624,8 @@ final class PanelSurface: NSView {
             value.changeDetection = owner.changeDetection
             value.threshold = owner.changeDetection ? owner.changeSeconds : owner.idleSeconds
             value.zoomed = owner.viewport.magnification > 1.001
+            value.media = owner.mediaSnapshot
+            value.mediaSeek = owner.mediaSeekEnabled
         }
         if value != chromeState.value {
             if value.hovered != chromeState.value.hovered && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -646,6 +677,10 @@ final class PanelSurface: NSView {
         case .threshold: owner?.showThresholdMenu()
         case .detection: showDetectionMenu()
         case .resize: break
+        case .playPause: owner?.mediaAction("toggle")
+        case .previousTrack: owner?.mediaAction("previous")
+        case .nextTrack: owner?.mediaAction("next")
+        case .seek: break
         }
     }
     @objc private func showDetectionMenu() {

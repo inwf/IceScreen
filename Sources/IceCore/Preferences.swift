@@ -92,6 +92,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var regionShortcut: Shortcut?
     public var closeAllShortcut: Shortcut?
     public var clickToFocus = true
+    public var moveSourceOffscreen = true
     public var sourceFocusBehavior: SourceFocusBehavior = .keep
     public var showOnFullscreenSpaces = true
     public var quickRegionCapture = true
@@ -101,6 +102,9 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var panelPosition: ZoomAnchor = .bottomRight
     public var triggerModifier: TriggerModifier = .function
     public var quickLook = true
+    public var mediaControls = true
+    public var mediaSeek = true
+    public var mediaSpace = true
     public var dimOnHover = true
     public var hoverBlur: Double = 1
     public var panelOpacity: Double = 1
@@ -135,6 +139,8 @@ public struct Preferences: Codable, Equatable, Sendable {
         case dimOnHover, hoverBlur, panelOpacity, showMenuBarIcon
         case contrastStrength, sharpnessStrength
         case smartRegionCapture
+        case mediaControls, mediaSeek, mediaSpace
+        case moveSourceOffscreen
     }
 
     public init(from decoder: Decoder) throws {
@@ -160,6 +166,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         regionShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .regionShortcut)
         closeAllShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .closeAllShortcut)
         clickToFocus = try c.decodeIfPresent(Bool.self, forKey: .clickToFocus) ?? clickToFocus
+        moveSourceOffscreen = try c.decodeIfPresent(Bool.self, forKey: .moveSourceOffscreen) ?? moveSourceOffscreen
         sourceFocusBehavior = try c.decodeIfPresent(SourceFocusBehavior.self, forKey: .sourceFocusBehavior) ?? sourceFocusBehavior
         showOnFullscreenSpaces = try c.decodeIfPresent(Bool.self, forKey: .showOnFullscreenSpaces) ?? showOnFullscreenSpaces
         quickRegionCapture = try c.decodeIfPresent(Bool.self, forKey: .quickRegionCapture) ?? quickRegionCapture
@@ -169,6 +176,9 @@ public struct Preferences: Codable, Equatable, Sendable {
         panelPosition = try c.decodeIfPresent(ZoomAnchor.self, forKey: .panelPosition) ?? panelPosition
         triggerModifier = try c.decodeIfPresent(TriggerModifier.self, forKey: .triggerModifier) ?? triggerModifier
         quickLook = try c.decodeIfPresent(Bool.self, forKey: .quickLook) ?? quickLook
+        mediaControls = try c.decodeIfPresent(Bool.self, forKey: .mediaControls) ?? mediaControls
+        mediaSeek = try c.decodeIfPresent(Bool.self, forKey: .mediaSeek) ?? mediaSeek
+        mediaSpace = try c.decodeIfPresent(Bool.self, forKey: .mediaSpace) ?? mediaSpace
         dimOnHover = try c.decodeIfPresent(Bool.self, forKey: .dimOnHover) ?? dimOnHover
         hoverBlur = try c.decodeIfPresent(Double.self, forKey: .hoverBlur) ?? hoverBlur
         panelOpacity = try c.decodeIfPresent(Double.self, forKey: .panelOpacity) ?? panelOpacity

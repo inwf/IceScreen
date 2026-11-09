@@ -1,9 +1,10 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import IceCore
 
 enum PanelAction: String, CaseIterable {
-    case close, frameRate, threshold, detection, resize
+    case close, frameRate, threshold, detection, resize, playPause, previousTrack, nextTrack, seek
 
     var label: String {
         switch self {
@@ -12,6 +13,10 @@ enum PanelAction: String, CaseIterable {
         case .threshold: return "检测等待时间"
         case .detection: return "内容检测"
         case .resize: return "拖动调整浮窗大小"
+        case .playPause: return "播放或暂停 · Space"
+        case .previousTrack: return "上一首"
+        case .nextTrack: return "下一首"
+        case .seek: return "播放进度 · ← → 调整 5 秒"
         }
     }
 }
@@ -35,9 +40,13 @@ final class PanelChromeState: ObservableObject {
         var previewEnabled = true
         var zoomed = false
         var message: String?
+        var media: MediaSnapshot?
+        var mediaSeek = true
     }
     @Published var value = Value()
     var perform: ((PanelAction) -> Void)?
+    var seek: ((Double) -> Void)?
+    var seeking: ((Bool) -> Void)?
 
     var detectionTitle: String { value.idle ? "已空闲" : (value.detection ? "检测中" : "未启用") }
     var detectionHelp: String {
@@ -57,6 +66,18 @@ final class PanelChromeState: ObservableObject {
             }
             if size.height >= 80 {
                 items.append(.init(id: .resize, frame: CGRect(x: size.width - 38, y: size.height - 38, width: 30, height: 30)))
+            }
+            if let media = value.media, size.height >= 100, size.width >= 150 {
+                let hasSeek = value.mediaSeek && media.seekable && size.height >= 145 && size.width >= 230
+                let y = size.height - (hasSeek ? 80 : 40)
+                items.append(.init(id: .playPause, frame: CGRect(x: size.width / 2 - 15, y: y, width: 30, height: 30)))
+                if size.width >= 230 {
+                    items.append(.init(id: .previousTrack, frame: CGRect(x: size.width / 2 - 53, y: y, width: 30, height: 30)))
+                    items.append(.init(id: .nextTrack, frame: CGRect(x: size.width / 2 + 23, y: y, width: 30, height: 30)))
+                }
+                if hasSeek {
+                    items.append(.init(id: .seek, frame: CGRect(x: 12, y: size.height - 43, width: size.width - 62, height: 36)))
+                }
             }
         }
         if value.hovered || value.detection {
@@ -98,7 +119,7 @@ struct PanelChrome: View {
     }
 
     @ViewBuilder private func hints(in size: CGSize) -> some View {
-        if state.value.hovered && state.value.showHints && state.value.message == nil && size.width >= 210 && size.height >= 110 {
+        if state.value.hovered && state.value.showHints && state.value.message == nil && state.value.media == nil && size.width >= 210 && size.height >= 110 {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 12) {
                     hintKey(state.value.clickToFocus ? "单击" : "双击",
@@ -140,7 +161,9 @@ struct PanelChrome: View {
     }
 
     @ViewBuilder private func control(_ action: PanelAction) -> some View {
-        if action == .resize {
+        if action == .seek, let snapshot = state.value.media {
+            MediaSeekControl(snapshot: snapshot, seek: { state.seek?($0) }, editing: { state.seeking?($0) })
+        } else if action == .resize {
             if #available(macOS 26.0, *) {
                 resizeLabel.glassEffect(.clear, in: .circle)
                     .glassEffectID(action, in: glassNamespace)
@@ -201,7 +224,49 @@ struct PanelChrome: View {
                 .symbolEffect(.pulse, options: .repeating, isActive: state.value.idle && !reduceMotion)
         case .resize:
             EmptyView()
+        case .playPause:
+            Image(systemName: state.value.media?.playing == true ? "pause.fill" : "play.fill").font(.system(size: 12))
+        case .previousTrack:
+            Image(systemName: "backward.end.fill").font(.system(size: 12))
+        case .nextTrack:
+            Image(systemName: "forward.end.fill").font(.system(size: 12))
+        case .seek:
+            EmptyView()
         }
+    }
+}
+
+private struct MediaSeekControl: View {
+    let snapshot: MediaSnapshot
+    let seek: (Double) -> Void
+    let editing: (Bool) -> Void
+    @State private var dragging = false
+    @State private var value = 0.0
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let duration = max(1, snapshot.duration ?? 1)
+            let position = dragging ? value : snapshot.position(at: context.date.timeIntervalSince1970)
+            VStack(spacing: 0) {
+                Slider(value: Binding(get: { min(duration, position) }, set: { value = $0 }), in: 0...duration) { active in
+                    if active { value = position }
+                    dragging = active
+                    editing(active)
+                    if !active { seek(value) }
+                }
+                .controlSize(.mini).focusable(false).tint(.white)
+                .accessibilityLabel("播放进度")
+                HStack { Text(time(position)); Spacer(); Text(time(duration)) }
+                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 1)
+            }
+        }
+        .onDisappear { if dragging { dragging = false; editing(false) } }
+    }
+    private func time(_ seconds: Double) -> String {
+        let value = Int(min(359999, max(0, seconds)))
+        return value >= 3600 ? String(format: "%d:%02d:%02d", value / 3600, value / 60 % 60, value % 60)
+            : String(format: "%d:%02d", value / 60, value % 60)
     }
 }
 

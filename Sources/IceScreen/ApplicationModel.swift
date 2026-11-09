@@ -36,6 +36,7 @@ final class ApplicationModel: ObservableObject {
     let settings = SettingsStore()
     let catalog = WindowCatalog()
     let hotkeys = HotkeyMonitor()
+    let media = MediaController()
     let selector = RegionSelector()
     let preview = QuickLookPreview()
     private let detectionActions = DetectionActions()
@@ -75,9 +76,14 @@ final class ApplicationModel: ObservableObject {
         hotkeys.onCloseAll = { [weak self] in self?.closeAll() }
         hotkeys.onHoverAction = { [weak self] action in self?.hoverAction(action) ?? false }
         hotkeys.onSpaceDown = { [weak self] in
-            guard let self, self.settings.value.quickLook else { return false }
+            guard let self else { return false }
             if self.preview.isPresented { self.preview.close(); return true }
             guard let session = self.hovered(includeAutoHidden: true) else { return false }
+            if self.settings.value.mediaSpace, session.mediaSnapshot != nil {
+                self.preview.pressMedia(session, previewEnabled: self.settings.value.quickLook)
+                return true
+            }
+            guard self.settings.value.quickLook else { return false }
             self.preview.press(session)
             return true
         }
@@ -87,6 +93,8 @@ final class ApplicationModel: ObservableObject {
             self.preview.close(); return true
         }
         preview.onError = { [weak self] in self?.error = $0.localizedDescription }
+        media.onChange = { [weak self] snapshots in self?.sessions.forEach { $0.updateMedia(snapshots) } }
+        media.onError = { [weak self] message in self?.sessions.forEach { $0.showHint(message) } }
         detectionActions.onError = { [weak self] in self?.error = $0 }
         detectionActions.onOpen = { [weak self] id in self?.sessions.first { $0.id == id }?.focusSource() }
         focusMonitor.onChange = { [weak self] windowID in
@@ -103,6 +111,7 @@ final class ApplicationModel: ObservableObject {
             self.hotkeys.quickRegionCapture = value.quickRegionCapture
             if previous.triggerModifier != value.triggerModifier { self.hotkeys.triggerModifier = value.triggerModifier }
             if !value.quickLook { self.preview.close() }
+            if previous.mediaSpace != value.mediaSpace { self.preview.close() }
             for session in self.sessions {
                 session.applyPreferences(value)
                 if previous.autoHide != value.autoHide { session.autoHide = value.autoHide }
@@ -118,6 +127,7 @@ final class ApplicationModel: ObservableObject {
                 self.detectionActions.prepareNotifications()
             }
             if !value.multiWindow { Array(self.sessions.dropLast()).forEach { $0.close() } }
+            if previous.mediaControls != value.mediaControls { self.updateMediaMonitoring() }
             if previous.sourceFocusBehavior != value.sourceFocusBehavior {
                 DispatchQueue.main.async { [weak self] in self?.focusMonitor.refresh() }
             }
@@ -288,6 +298,7 @@ final class ApplicationModel: ObservableObject {
             guard let self, let session else { return }
             self.preview.show(session)
         }
+        session.onMedia = { [weak self] in self?.media.send($0) }
         session.onDetection = { [weak self, weak session] event in
             guard let self, let session else { return }
             self.detectionActions.send(event, session: session, preferences: self.settings.value)
@@ -304,6 +315,8 @@ final class ApplicationModel: ObservableObject {
             detectionActions.prepareNotifications()
         }
         session.start()
+        updateMediaMonitoring()
+        session.updateMedia(media.snapshots)
         startSessionMonitoring()
     }
 
@@ -349,6 +362,9 @@ final class ApplicationModel: ObservableObject {
 
     private func hoverAction(_ action: HoverAction) -> Bool {
         guard let session = hovered(includeHidden: action == .close, includeAutoHidden: action == .close) else { return false }
+        if action == .seekBackward || action == .seekForward {
+            return session.seekMedia(relative: action == .seekBackward ? -5 : 5)
+        }
         DispatchQueue.main.async { [weak session] in
             guard let session else { return }
             switch action {
@@ -359,6 +375,7 @@ final class ApplicationModel: ObservableObject {
             case .zoomIn: session.zoomIn()
             case .zoomOut: session.zoomOut()
             case .resetZoom: session.resetZoom()
+            case .seekBackward, .seekForward: break
             case .close: session.close()
             }
         }
@@ -386,10 +403,16 @@ final class ApplicationModel: ObservableObject {
     private func pointerMoved() { sessions.forEach { $0.pointerMoved(to: NSEvent.mouseLocation) } }
 
     private func stopSessionMonitoring() {
+        media.stop()
         ticker?.invalidate(); ticker = nil
         focusMonitor.stop()
         if let mouseGlobal { NSEvent.removeMonitor(mouseGlobal); self.mouseGlobal = nil }
         if let mouseLocal { NSEvent.removeMonitor(mouseLocal); self.mouseLocal = nil }
+    }
+
+    private func updateMediaMonitoring() {
+        if !sessions.isEmpty && settings.value.mediaControls { media.start() }
+        else { media.stop() }
     }
 
     func shutdown() {

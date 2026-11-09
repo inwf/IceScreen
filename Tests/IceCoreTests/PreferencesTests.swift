@@ -27,4 +27,27 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(settings.idleSeconds, 20)
         XCTAssertEqual(settings.preferredWidth, 160)
     }
+
+    func testDetectionAndAppearanceSettingsMigrateAndPersist() throws {
+        let legacy = try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8))
+        XCTAssertFalse(legacy.changeDetection)
+        XCTAssertTrue(legacy.dimOnHover)
+        XCTAssertTrue(legacy.showMenuBarIcon)
+        var preferences = legacy
+        preferences.changeDetection = true
+        preferences.sensitiveDetection = true
+        preferences.detectionNotifications = false
+        preferences.detectionCommand = "echo \"$ICESCREEN_EVENT\""
+        preferences.detectionCommandTimeout = 30
+        preferences.showMenuBarIcon = false
+        preferences.hoverBlur = 0.7
+        XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences)), preferences)
+        preferences.changeSeconds = -10
+        preferences.detectionCommandTimeout = .infinity
+        preferences.hoverBlur = 20
+        preferences.normalize()
+        XCTAssertEqual(preferences.changeSeconds, 1)
+        XCTAssertEqual(preferences.detectionCommandTimeout, 15)
+        XCTAssertEqual(preferences.hoverBlur, 1)
+    }
 }

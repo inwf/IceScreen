@@ -20,6 +20,10 @@ jobs:
           swift --version
       - name: Test
         run: swift test
+      - name: Check native panel event targeting
+        run: bash scripts/check-panel-events.sh
+      - name: Check detection command processes
+        run: python3 scripts/check-detection-command.py .build/debug/IceScreen
       - name: Build universal application and DMG
         run: UNIVERSAL=1 bash scripts/build.sh
       - name: Check bundle

@@ -11,6 +11,7 @@ enum IceScreenApp {
     @MainActor
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.count == 2, arguments[0] == "--run-detection-command" { DetectionCommand.execute(arguments[1]) }
         if arguments == ["--help"] || arguments == ["-h"] { print(CaptureRequest.usage); return }
         let request: CaptureRequest?
         do { request = arguments.isEmpty ? nil : try CaptureRequest.parse(arguments) }
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private var errorSubscription: AnyCancellable?
+    private var menuVisibilitySubscription: AnyCancellable?
 
     init(initialRequest: CaptureRequest?) { self.initialRequest = initialRequest; super.init() }
 
@@ -69,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         status.menu = menu
         statusItem = status
+        menuVisibilitySubscription = model.settings.$value.map(\.showMenuBarIcon).removeDuplicates().sink { [weak self] visible in
+            self?.statusItem?.isVisible = visible
+        }
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(receive(_:)),
             name: .init("org.icescreen.command"), object: Bundle.main.bundleIdentifier ?? "org.icescreen.app")
         if let initialRequest { model.receive(initialRequest) }
@@ -88,12 +93,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 620, height: 610),
-                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 820, height: 640),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = "IceScreen 设置"
-            window.titlebarAppearsTransparent = true
+            window.toolbarStyle = .unified
+            window.contentMinSize = NSSize(width: 740, height: 540)
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(model: model, store: model.settings))
+            window.contentViewController = NSHostingController(rootView: SettingsView(model: model, store: model.settings))
             window.setFrameAutosaveName("IceScreen.Settings")
             window.center()
             settingsWindow = window
@@ -161,6 +167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 @main
 enum IceScreenApp {
     static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.count == 2, arguments[0] == "--run-detection-command" { DetectionCommand.execute(arguments[1]) }
         if CommandLine.arguments.dropFirst().contains("--help") { print(CaptureRequest.usage); return }
         fputs("IceScreen requires macOS 14 or later. IceCore tests can run on this platform.\n", stderr)
         exit(1)

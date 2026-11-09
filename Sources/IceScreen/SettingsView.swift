@@ -6,31 +6,37 @@ import IceCore
 struct SettingsView: View {
     @ObservedObject var model: ApplicationModel
     @ObservedObject var store: SettingsStore
-    @State private var page = 0
+    @State private var selection: SettingsPage? = .general
+    private var page: SettingsPage { selection ?? .general }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("设置分类", selection: $page) {
-                Label("通用", systemImage: "gearshape").tag(0)
-                Label("浮窗", systemImage: "pip").tag(1)
-                Label("捕获", systemImage: "rectangle.dashed").tag(2)
-                Label("操作", systemImage: "keyboard").tag(3)
-                Label("关于", systemImage: "info.circle").tag(4)
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section("IceScreen") {
+                    ForEach(SettingsPage.allCases) { item in
+                        Label(item.title, systemImage: item.icon)
+                            .tag(item)
+                    }
+                }
             }
-            .pickerStyle(.segmented).labelsHidden().padding(8).modifier(IceGlass())
-            .padding(.horizontal, 24).padding(.vertical, 12)
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
             Group {
                 switch page {
-                case 1: floatingWindows
-                case 2: capture
-                case 3: keyboard
-                case 4: about
-                default: general
+                case .general: general
+                case .floatingWindows: floatingWindows
+                case .capture: capture
+                case .detection: detection
+                case .keyboard: keyboard
+                case .about: about
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle(page.title)
         }
-        .padding(.top, 8)
-        .frame(width: 620, height: 610)
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 740, idealWidth: 820, minHeight: 540, idealHeight: 640)
         .alert("IceScreen", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("好", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -77,6 +83,9 @@ struct SettingsView: View {
             }
             Section("启动") {
                 Toggle("登录时启动 IceScreen", isOn: Binding(get: { model.loginEnabled }, set: model.setLaunchAtLogin))
+                Toggle("显示菜单栏图标", isOn: $store.value.showMenuBarIcon)
+                Text("隐藏图标后仍会继续运行。再次打开 IceScreen 可以回到设置。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("系统权限") {
                 permissionRow("屏幕录制", granted: model.screenPermission, action: model.requestScreenPermission)
@@ -98,7 +107,7 @@ struct SettingsView: View {
                     ForEach(ZoomAnchor.allCases, id: \.self) { Text(positionName($0)).tag($0) }
                 }
                 Toggle("显示在全屏桌面空间", isOn: $store.value.showOnFullscreenSpaces)
-                Toggle("单击定位来源窗口", isOn: $store.value.clickToFocus)
+                Toggle("单击定位来源窗口并保留浮窗", isOn: $store.value.clickToFocus)
                 Picker("来源窗口获得焦点时", selection: $store.value.sourceFocusBehavior) {
                     Text("保持浮窗").tag(SourceFocusBehavior.keep)
                     Text("暂停捕获").tag(SourceFocusBehavior.pause)
@@ -113,6 +122,11 @@ struct SettingsView: View {
             Section("浮窗显示") {
                 Toggle("显示操作提示", isOn: $store.value.showHoverHints)
                 Toggle("Space 预览来源窗口", isOn: $store.value.quickLook)
+                Toggle("悬停时背景变暗", isOn: $store.value.dimOnHover)
+                LabeledContent("悬停模糊强度", value: "\(Int(store.value.hoverBlur * 100))%")
+                Slider(value: $store.value.hoverBlur, in: 0...1, step: 0.05).disabled(!store.value.dimOnHover)
+                Text("操作提示消失后，画面中央恢复清晰，仅在按钮周围保留效果。")
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent("圆角", value: "\(Int(store.value.cornerRadius)) pt")
                 Slider(value: $store.value.cornerRadius, in: 0...30, step: 1)
             }
@@ -140,14 +154,6 @@ struct SettingsView: View {
             } header: { Text("画面") } footer: {
                 Text("默认 10 FPS。静态进度可用 1 FPS，视频可用 30 或 60 FPS。悬停时按 F 打开帧率菜单，选择会按应用保存。")
             }
-            Section {
-                Toggle("检测内容空闲", isOn: $store.value.idleDetection)
-                Picker("无变化多久后提示", selection: $store.value.idleSeconds) {
-                    ForEach([5.0, 10, 20, 30, 60, 120], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
-                }
-            } header: { Text("内容检测") } footer: {
-                Text("悬停时按 D，或点击右上角状态点，可以为单个浮窗开关检测。")
-            }
             if !store.value.appFrameRates.isEmpty {
                 Section("应用帧率") {
                     ForEach(store.value.appFrameRates.keys.sorted(), id: \.self) { app in
@@ -166,6 +172,38 @@ struct SettingsView: View {
         }.formStyle(.grouped)
     }
 
+    private var detection: some View {
+        Form {
+            Section {
+                Toggle("检测内容空闲", isOn: $store.value.idleDetection)
+                Picker("保持静止多久后提醒", selection: $store.value.idleSeconds) {
+                    ForEach([5.0, 10, 20, 30, 60, 120], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
+                }
+                Toggle("检测画面变化", isOn: $store.value.changeDetection)
+                Picker("变化检测前的安静时间", selection: $store.value.changeSeconds) {
+                    ForEach([1.0, 5, 10, 20, 30, 60, 120], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
+                }
+                Toggle("检测细微变化", isOn: $store.value.sensitiveDetection)
+            } header: { Text("检测条件") } footer: {
+                Text("空闲检测会在画面停止变化时提醒；变化检测会在画面安静一段时间后重新出现变化时提醒。细微变化适用于进度条和加载指示器。悬停时使用 D、C、S 分别切换。")
+            }
+            Section {
+                Toggle("发送系统通知", isOn: $store.value.detectionNotifications)
+                Text("点击通知可以定位来源窗口。隐藏、暂停和睡眠期间停止检测，恢复捕获后重新开始计时。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: { Text("提醒") }
+            Section {
+                TextField("Shell 命令（留空时关闭）", text: $store.value.detectionCommand, axis: .vertical)
+                    .font(.system(.body, design: .monospaced)).lineLimit(3...6)
+                Picker("执行超时", selection: $store.value.detectionCommandTimeout) {
+                    ForEach([5.0, 15, 30, 60, 120, 300], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
+                }
+            } header: { Text("检测命令") } footer: {
+                Text("通过 /bin/sh 执行。提供 ICESCREEN_EVENT（idle/change）、ICESCREEN_APP、ICESCREEN_BUNDLE_ID、ICESCREEN_WINDOW_ID 和 ICESCREEN_WINDOW_TITLE 环境变量。每个浮窗同时运行一个命令；执行期间忽略新的命令触发。超时或关闭浮窗会终止命令进程组。")
+            }
+        }.formStyle(.grouped)
+    }
+
     private var keyboard: some View {
         Form {
             Section("捕获") {
@@ -180,7 +218,10 @@ struct SettingsView: View {
                 instruction("Delete", "关闭浮窗（透明时也有效）")
                 instruction("F", "打开应用帧率菜单")
                 instruction("D", "切换内容空闲检测")
+                instruction("C", "切换画面变化检测")
+                instruction("S", "切换细微变化检测")
                 instruction("双击", "定位来源窗口并关闭浮窗")
+                instruction("单击", store.value.clickToFocus ? "定位来源窗口并保留浮窗" : "单击定位已关闭，可在「浮窗」中开启")
                 instruction("⌘ + 拖动", "框选缩放区域")
                 instruction("⌘ + 双击", "恢复完整画面")
                 instruction("滚动 / ⌘ + 滚动", "平移 / 缩放")
@@ -196,11 +237,11 @@ struct SettingsView: View {
     private var about: some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: "pip").font(.system(size: 48, weight: .light))
-                .foregroundStyle(.tint).padding(28).modifier(IceGlass())
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
             VStack(spacing: 6) {
                 Text("IceScreen").font(.largeTitle.weight(.semibold))
-                Text("1.1.0").foregroundStyle(.secondary)
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建")
+                    .foregroundStyle(.secondary)
             }
             Text("让你关注的窗口，留在眼前。")
             Text("原生窗口捕获 · 本机处理 · GPL-3.0-or-later")
@@ -241,17 +282,28 @@ struct SettingsView: View {
     }
 }
 
-struct IceGlass: ViewModifier {
-    @ViewBuilder func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: .rect(cornerRadius: 24))
-        } else {
-            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+private enum SettingsPage: CaseIterable, Hashable, Identifiable {
+    case general, floatingWindows, capture, detection, keyboard, about
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .general: return "通用"
+        case .floatingWindows: return "浮窗"
+        case .capture: return "捕获"
+        case .detection: return "检测"
+        case .keyboard: return "操作"
+        case .about: return "关于"
         }
-        #else
-        content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
-        #endif
+    }
+    var icon: String {
+        switch self {
+        case .general: return "gearshape"
+        case .floatingWindows: return "pip"
+        case .capture: return "rectangle.dashed"
+        case .detection: return "waveform.path"
+        case .keyboard: return "keyboard"
+        case .about: return "info.circle"
+        }
     }
 }
 

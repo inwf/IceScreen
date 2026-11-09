@@ -5,6 +5,59 @@ import CoreGraphics
 #endif
 
 final class InteractionTests: XCTestCase {
+    func testSpaceTapKeepsPreviewAndSecondPressClosesIt() {
+        var gesture = PreviewGesture()
+        XCTAssertTrue(gesture.press(at: 1))
+        gesture.release(at: 1.1)
+        XCTAssertTrue(gesture.isPresented)
+        XCTAssertFalse(gesture.press(at: 2))
+        gesture.release(at: 2.1)
+        XCTAssertFalse(gesture.isPresented)
+    }
+
+    func testSpaceHoldClosesEvenWhenPresentationHasNotRunYet() {
+        var gesture = PreviewGesture()
+        XCTAssertTrue(gesture.press(at: 1))
+        gesture.release(at: 1.5)
+        XCTAssertFalse(gesture.isPresented)
+        XCTAssertTrue(gesture.press(at: 2))
+        gesture.close()
+        gesture.release(at: 2.6)
+        XCTAssertFalse(gesture.isPresented)
+    }
+
+    func testPreviewOpenedByButtonIgnoresUnrelatedKeyRelease() {
+        var gesture = PreviewGesture()
+        gesture.present()
+        gesture.release(at: 10)
+        XCTAssertTrue(gesture.isPresented)
+        XCTAssertFalse(gesture.press(at: 11))
+    }
+
+    func testPointerJitterStillCountsAsClick() {
+        var gesture = PanelClickGesture()
+        gesture.begin(at: CGPoint(x: 50, y: 50))
+        XCTAssertFalse(gesture.move(to: CGPoint(x: 51, y: 52)))
+        XCTAssertTrue(gesture.end(at: CGPoint(x: 51, y: 51)))
+        XCTAssertFalse(gesture.end(at: CGPoint(x: 51, y: 51)))
+    }
+
+    func testDragReturningToOriginDoesNotBecomeClick() {
+        var gesture = PanelClickGesture()
+        gesture.begin(at: CGPoint(x: 50, y: 50))
+        XCTAssertTrue(gesture.move(to: CGPoint(x: 60, y: 50)))
+        XCTAssertFalse(gesture.end(at: CGPoint(x: 50, y: 50)))
+        gesture.begin(at: .zero)
+        gesture.cancel()
+        XCTAssertFalse(gesture.end(at: .zero))
+    }
+
+    func testSingleClickPreferencePreservesExplicitOptOut() throws {
+        XCTAssertTrue(Preferences().clickToFocus)
+        let disabled = try JSONDecoder().decode(Preferences.self, from: Data(#"{"clickToFocus":false}"#.utf8))
+        XCTAssertFalse(disabled.clickToFocus)
+    }
+
     func testCommandShiftShortcutAndRegionRemainDistinct() throws {
         let key = Shortcut(keyCode: 34, command: true, function: false, shift: true, label: "I")
         XCTAssertEqual(key.display, "⇧⌘I")

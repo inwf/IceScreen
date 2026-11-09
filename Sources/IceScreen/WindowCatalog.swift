@@ -79,6 +79,7 @@ final class WindowCatalog: ObservableObject {
     }
 
     func focus(_ source: SCWindow) throws {
+        guard AXIsProcessTrusted() else { throw RequestError.message("需要辅助功能权限才能定位来源窗口。") }
         guard let owner = source.owningApplication,
               let app = NSRunningApplication(processIdentifier: owner.processID) else {
             throw RequestError.message("来源应用已经退出。")
@@ -87,20 +88,30 @@ final class WindowCatalog: ObservableObject {
         var result: CFTypeRef?
         guard AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &result) == .success,
               let windows = result as? [AXUIElement], !windows.isEmpty else {
-            app.activate(options: [])
-            throw RequestError.message("需要辅助功能权限才能定位来源窗口。")
+            throw RequestError.message("来源应用没有提供可定位的窗口，请确认窗口仍然打开。")
         }
         let currentInfo = CGWindowListCopyWindowInfo(.optionIncludingWindow, source.windowID) as? [[String: Any]]
-        let bounds = currentInfo?.first?[kCGWindowBounds as String] as? [String: Any]
+        guard let entry = currentInfo?.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == source.windowID }) else {
+            throw RequestError.message("来源窗口已经关闭。")
+        }
+        let bounds = entry[kCGWindowBounds as String] as? [String: Any]
         let currentFrame = bounds.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? source.frame
-        let target = windows.min { matchScore($0, source, frame: currentFrame) < matchScore($1, source, frame: currentFrame) }!
+        let currentTitle = entry[kCGWindowName as String] as? String ?? source.title
+        let target = windows.min {
+            matchScore($0, source, frame: currentFrame, title: currentTitle) < matchScore($1, source, frame: currentFrame, title: currentTitle)
+        }!
         AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-        app.activate(options: [])
+        AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if !app.isActive {
+            NSApp.yieldActivation(to: app)
+            guard app.activate(options: []) else { throw RequestError.message("来源应用拒绝激活，请确认应用仍在运行。") }
+        }
         let status = AXUIElementPerformAction(target, kAXRaiseAction as CFString)
         if status != .success { throw RequestError.message("无法聚焦来源窗口（\(status.rawValue)）。") }
     }
 
-    private func matchScore(_ element: AXUIElement, _ window: SCWindow, frame: CGRect? = nil) -> Double {
+    private func matchScore(_ element: AXUIElement, _ window: SCWindow, frame: CGRect? = nil, title: String? = nil) -> Double {
         var titleValue: CFTypeRef?, positionValue: CFTypeRef?, sizeValue: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleValue)
         AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue)
@@ -112,7 +123,7 @@ final class WindowCatalog: ObservableObject {
         if let value = sizeValue, CFGetTypeID(value) == AXValueGetTypeID() {
             AXValueGetValue(unsafeBitCast(value, to: AXValue.self), .cgSize, &size)
         }
-        let titlePenalty: Double = (titleValue as? String) == window.title ? 0 : 100_000
+        let titlePenalty: Double = (titleValue as? String) == (title ?? window.title) ? 0 : 1
         let target = frame ?? window.frame
         return titlePenalty + abs(position.x - target.minX) + abs(position.y - target.minY)
             + abs(size.width - target.width) + abs(size.height - target.height)

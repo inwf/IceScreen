@@ -24,6 +24,7 @@ final class HotkeyMonitor {
     private var source: CFRunLoopSource?
     private var functionGesture = FunctionKeyGesture()
     private var consumedKeys: Set<UInt16> = []
+    private var previewKeyHeld = false
     private var consumedMouseDown = false
     private var taps = ModifierTapSequence(interval: NSEvent.doubleClickInterval)
     private var singleTapTask: Task<Void, Never>?
@@ -76,6 +77,7 @@ final class HotkeyMonitor {
         tap = nil; source = nil
         functionGesture.reset()
         consumedKeys.removeAll()
+        if previewKeyHeld { onSpaceUp?(); previewKeyHeld = false }
         consumedMouseDown = false
         cancelPendingTap()
     }
@@ -84,6 +86,7 @@ final class HotkeyMonitor {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             functionGesture.reset()
             consumedKeys.removeAll()
+            if previewKeyHeld { onSpaceUp?(); previewKeyHeld = false }
             consumedMouseDown = false
             cancelPendingTap()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -92,7 +95,10 @@ final class HotkeyMonitor {
         let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         if type == .keyUp {
             let consumed = consumedKeys.remove(code) != nil
-            if code == 49, consumed { onSpaceUp?() }
+            if code == 49, previewKeyHeld {
+                previewKeyHeld = false
+                onSpaceUp?()
+            }
             return consumed
         }
         if type == .leftMouseUp {
@@ -157,7 +163,11 @@ final class HotkeyMonitor {
         }
         if code == 49, flags.intersection(otherFlags).isEmpty {
             if consumedKeys.contains(code) { return true }
-            if !repeated, onSpaceDown?() == true { consumedKeys.insert(code); return true }
+            if !repeated, onSpaceDown?() == true {
+                previewKeyHeld = true
+                consumedKeys.insert(code)
+                return true
+            }
         }
         if flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskSecondaryFn]).isEmpty,
            let action = HoverAction.resolve(keyCode: code, repeated: repeated), onHoverAction?(action) == true {

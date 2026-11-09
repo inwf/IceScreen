@@ -38,6 +38,7 @@ final class ApplicationModel: ObservableObject {
     let hotkeys = HotkeyMonitor()
     let selector = RegionSelector()
     let preview = QuickLookPreview()
+    private let detectionActions = DetectionActions()
     private let focusMonitor = SourceFocusMonitor()
     @Published private(set) var sessions: [CaptureSession] = []
     @Published private(set) var screenPermission = false
@@ -75,18 +76,19 @@ final class ApplicationModel: ObservableObject {
         hotkeys.onHoverAction = { [weak self] action in self?.hoverAction(action) ?? false }
         hotkeys.onSpaceDown = { [weak self] in
             guard let self, self.settings.value.quickLook else { return false }
-            if self.preview.isVisible { self.preview.close(); return true }
-            guard let session = self.hovered() else { return false }
-            DispatchQueue.main.async { [weak self, weak session] in
-                if let session { self?.preview.press(session) }
-            }
+            if self.preview.isPresented { self.preview.close(); return true }
+            guard let session = self.hovered(includeAutoHidden: true) else { return false }
+            self.preview.press(session)
             return true
         }
         hotkeys.onSpaceUp = { [weak self] in self?.preview.release() }
         hotkeys.onEscape = { [weak self] in
-            guard let self, self.preview.isVisible else { return false }
+            guard let self, self.preview.isPresented else { return false }
             self.preview.close(); return true
         }
+        preview.onError = { [weak self] in self?.error = $0.localizedDescription }
+        detectionActions.onError = { [weak self] in self?.error = $0 }
+        detectionActions.onOpen = { [weak self] id in self?.sessions.first { $0.id == id }?.focusSource() }
         focusMonitor.onChange = { [weak self] windowID in
             guard let self else { return }
             for session in Array(self.sessions) {
@@ -106,6 +108,14 @@ final class ApplicationModel: ObservableObject {
                 if previous.autoHide != value.autoHide { session.autoHide = value.autoHide }
                 if previous.enhanceContrast != value.enhanceContrast { session.enhanced = value.enhanceContrast }
                 if previous.idleDetection != value.idleDetection { session.idleDetection = value.idleDetection }
+                if previous.changeDetection != value.changeDetection { session.changeDetection = value.changeDetection }
+                if previous.sensitiveDetection != value.sensitiveDetection { session.sensitiveDetection = value.sensitiveDetection }
+                if previous.fps(for: session.bundleID) != value.fps(for: session.bundleID) {
+                    session.setFPS(value.fps(for: session.bundleID))
+                }
+            }
+            if value.detectionNotifications && self.sessions.contains(where: { $0.idleDetection || $0.changeDetection }) {
+                self.detectionActions.prepareNotifications()
             }
             if !value.multiWindow { Array(self.sessions.dropLast()).forEach { $0.close() } }
             if previous.sourceFocusBehavior != value.sourceFocusBehavior {
@@ -174,7 +184,7 @@ final class ApplicationModel: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
-    func receive(_ request: CaptureRequest) {
+    func receive(_ request: CaptureRequest, toggleExisting: Bool = false) {
         selectionTask?.cancel()
         selector.cancel()
         let pid = preferredPID()
@@ -190,7 +200,7 @@ final class ApplicationModel: ObservableObject {
             do {
                 let source = try catalog.resolve(request, preferredPID: pid)
                 if request.region { selectRegion(source) }
-                else { start(source, viewport: .initial(anchor: request.anchor, factor: request.zoom)) }
+                else { start(source, viewport: .initial(anchor: request.anchor, factor: request.zoom), toggleExisting: toggleExisting) }
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -199,7 +209,7 @@ final class ApplicationModel: ObservableObject {
         selector.cancel()
         var request = CaptureRequest()
         request.region = region
-        receive(request)
+        receive(request, toggleExisting: true)
     }
 
     private func preferredPID() -> pid_t? {
@@ -246,8 +256,9 @@ final class ApplicationModel: ObservableObject {
         }
     }
 
-    func start(_ source: SCWindow, viewport: Viewport = .full) {
+    func start(_ source: SCWindow, viewport: Viewport = .full, toggleExisting: Bool = false) {
         if let existing = sessions.first(where: { $0.source.windowID == source.windowID }) {
+            if toggleExisting, !existing.hidden { existing.close(); return }
             existing.setViewport(viewport)
             if existing.hidden { existing.toggleHidden() }
             if existing.paused { existing.togglePaused() }
@@ -259,16 +270,34 @@ final class ApplicationModel: ObservableObject {
         session.onClose = { [weak self] value in
             guard let self else { return }
             if self.preview.sourceID == value.source.windowID { self.preview.close() }
+            self.detectionActions.close(value.id)
             self.sessions.removeAll { $0.id == value.id }
             if self.sessions.isEmpty { self.stopSessionMonitoring() }
         }
         session.onFocus = { [weak self] source in
-            do { try self?.catalog.focus(source) } catch { self?.error = error.localizedDescription }
+            guard let self else { return false }
+            do { try self.catalog.focus(source); return true }
+            catch { self.error = error.localizedDescription; return false }
+        }
+        session.onPreview = { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.preview.show(session)
+        }
+        session.onDetection = { [weak self, weak session] event in
+            guard let self, let session else { return }
+            self.detectionActions.send(event, session: session, preferences: self.settings.value)
+        }
+        session.onDetectionEnabled = { [weak self] in
+            guard let self, self.settings.value.detectionNotifications else { return }
+            self.detectionActions.prepareNotifications()
         }
         session.onFrameRate = { [weak self] app, fps in self?.setFPS(app: app, fps: fps) }
         session.onResize = { [weak self] width in self?.settings.value.preferredWidth = width }
         session.onChange = { [weak self] in self?.objectWillChange.send() }
         sessions.append(session)
+        if settings.value.detectionNotifications && (session.idleDetection || session.changeDetection) {
+            detectionActions.prepareNotifications()
+        }
         session.start()
         startSessionMonitoring()
     }
@@ -290,9 +319,14 @@ final class ApplicationModel: ObservableObject {
 
     private func hovered(includeHidden: Bool = false, includeAutoHidden: Bool = false) -> CaptureSession? {
         let point = NSEvent.mouseLocation
-        for window in NSApp.orderedWindows {
-            if let session = sessions.first(where: { $0.panel === window }), !session.hidden,
-               (includeAutoHidden || !session.autoHidden), window.frame.contains(point) { return session }
+        let hit = PanelHitTesting.frontmost(at: point, among: sessions.map(\.panel))
+        if let hit, let session = sessions.first(where: { $0.panel === hit }), !session.hidden, !session.autoHidden {
+            return session
+        }
+        if includeAutoHidden, let session = sessions.reversed().first(where: {
+            $0.autoHidden && $0.panel.isVisible && $0.panel.isOnActiveSpace && $0.panel.frame.contains(point)
+        }) {
+            return session
         }
         if includeHidden {
             return sessions.reversed().first { $0.hidden && $0.panel.frame.contains(point) }
@@ -315,6 +349,8 @@ final class ApplicationModel: ObservableObject {
             switch action {
             case .frameRate: session.showFrameRateMenu()
             case .idleDetection: session.toggleIdle()
+            case .changeDetection: session.toggleChangeDetection()
+            case .sensitiveDetection: session.toggleSensitiveDetection()
             case .zoomIn: session.zoomIn()
             case .zoomOut: session.zoomOut()
             case .close: session.close()
@@ -354,6 +390,7 @@ final class ApplicationModel: ObservableObject {
         selector.cancel()
         preview.close()
         closeAll()
+        detectionActions.shutdown()
         stopSessionMonitoring()
         hotkeys.stop()
         for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }

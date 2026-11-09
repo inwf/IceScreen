@@ -43,14 +43,26 @@ final class FrameMailbox: @unchecked Sendable {
 final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let mailbox = FrameMailbox()
     let queue = DispatchQueue(label: "org.icescreen.frames", qos: .userInteractive)
-    var onActivity: (() -> Void)?
+    var onActivity: ((Bool) -> Void)?
     var onFailure: ((SCStream, Error) -> Void)?
     private var detectIdle = false
+    private var lastFrame: CVPixelBuffer?
+    private var running = false
     private var lastSample: TimeInterval = 0
     private var detector = IdleDetector(threshold: 0.5)
 
-    func configureIdle(_ enabled: Bool) {
-        queue.async { [self] in detectIdle = enabled; detector.reset(); lastSample = 0 }
+    func configureIdle(_ enabled: Bool, sensitive: Bool = false) {
+        queue.async { [self] in
+            detectIdle = enabled
+            detector.sensitive = sensitive
+            detector.reset()
+            lastSample = 0
+            if enabled, running, let lastFrame { sample(lastFrame, at: ProcessInfo.processInfo.systemUptime) }
+        }
+    }
+
+    func setRunning(_ value: Bool) {
+        queue.async { [self] in running = value; detector.reset(); lastSample = 0; lastFrame = nil }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -58,15 +70,26 @@ final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid,
+        guard running, type == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
                 as? [[SCStreamFrameInfo: Any]],
               let rawStatus = attachments.first?[.status] as? Int,
               SCFrameStatus(rawValue: rawStatus) == .complete,
               let buffer = sampleBuffer.imageBuffer else { return }
+        acceptFrame(buffer)
+    }
+
+    // 由帧队列调用；保留一个缓冲区以便在静止画面上开启检测时建立基准。
+    func acceptFrame(_ buffer: CVPixelBuffer) {
+        guard running else { return }
         mailbox.submit(buffer)
+        lastFrame = buffer
         let now = ProcessInfo.processInfo.systemUptime
         guard detectIdle, now - lastSample >= 1 else { return }
+        sample(buffer, at: now)
+    }
+
+    private func sample(_ buffer: CVPixelBuffer, at now: TimeInterval) {
         lastSample = now
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
@@ -75,16 +98,19 @@ final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
         let stride = CVPixelBufferGetBytesPerRow(buffer)
         let bytes = base.assumingMemoryBound(to: UInt8.self)
         var values: [UInt8] = []
-        values.reserveCapacity(32 * 32)
-        for y in 0..<32 {
-            for x in 0..<32 {
-                let offset = min(height - 1, (2 * y + 1) * height / 64) * stride
-                    + min(width - 1, (2 * x + 1) * width / 64) * 4
+        let side = detector.sensitive ? 64 : 32
+        values.reserveCapacity(side * side)
+        for y in 0..<side {
+            for x in 0..<side {
+                let offset = min(height - 1, (2 * y + 1) * height / (2 * side)) * stride
+                    + min(width - 1, (2 * x + 1) * width / (2 * side)) * 4
                 values.append(UInt8((Int(bytes[offset]) + Int(bytes[offset + 1]) * 2 + Int(bytes[offset + 2])) / 4))
             }
         }
-        if !detector.observe(values, at: now) {
-            DispatchQueue.main.async { [weak self] in self?.onActivity?() }
+        _ = detector.observe(values, at: now)
+        if detector.didChange {
+            let initial = detector.isInitialSample
+            DispatchQueue.main.async { [weak self] in self?.onActivity?(initial) }
         }
     }
 }
@@ -121,6 +147,7 @@ final class CapturePipeline {
             self.desiredRunning = false
             self.stream = nil
             self.appliedRevision = -1
+            self.output.setRunning(false)
             self.output.mailbox.setEnabled(false)
             self.onError?(error)
         }
@@ -152,6 +179,7 @@ final class CapturePipeline {
         guard !disposed else { return }
         guard desiredRunning != value else { return }
         desiredRunning = value
+        output.setRunning(value)
         output.mailbox.setEnabled(value)
         reconcile()
     }
@@ -159,6 +187,7 @@ final class CapturePipeline {
     func close() {
         disposed = true
         desiredRunning = false
+        output.setRunning(false)
         output.mailbox.setEnabled(false)
         output.mailbox.deliver = nil
         output.onActivity = nil
@@ -201,6 +230,7 @@ final class CapturePipeline {
                 }
             } catch {
                 desiredRunning = false
+                output.setRunning(false)
                 output.mailbox.setEnabled(false)
                 let failedStream = stream
                 stream = nil
@@ -217,25 +247,34 @@ final class CapturePipeline {
 }
 
 @MainActor
-final class FrameView: NSView {
-    private let metalLayer = CAMetalLayer()
-    private let device: MTLDevice
-    private let commands: MTLCommandQueue
-    private let context: CIContext
-    private var current: CVPixelBuffer?
-    private let inFlight = DispatchSemaphore(value: 2)
-    var enhanced = false { didSet { render() } }
-
-    override init(frame: NSRect) {
+private final class FrameRenderer {
+    static let shared = FrameRenderer()
+    let device: MTLDevice
+    let commands: MTLCommandQueue
+    let context: CIContext
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    private init() {
         guard let gpu = MTLCreateSystemDefaultDevice(), let queue = gpu.makeCommandQueue() else {
             fatalError("IceScreen requires a Metal-capable Mac.")
         }
         device = gpu
         commands = queue
         context = CIContext(mtlDevice: gpu, options: [.cacheIntermediates: false])
+    }
+}
+
+@MainActor
+final class FrameView: NSView {
+    private let metalLayer = CAMetalLayer()
+    private let renderer = FrameRenderer.shared
+    private var current: CVPixelBuffer?
+    private let inFlight = DispatchSemaphore(value: 2)
+    var enhanced = false { didSet { if oldValue != enhanced { render() } } }
+
+    override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        metalLayer.device = device
+        metalLayer.device = renderer.device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = false
         metalLayer.maximumDrawableCount = 2
@@ -262,7 +301,7 @@ final class FrameView: NSView {
         guard let current, window?.isVisible == true, window?.alphaValue ?? 0 > 0,
               bounds.width > 0, bounds.height > 0,
               inFlight.wait(timeout: .now()) == .success else { return }
-        guard let drawable = metalLayer.nextDrawable(), let command = commands.makeCommandBuffer() else {
+        guard let drawable = metalLayer.nextDrawable(), let command = renderer.commands.makeCommandBuffer() else {
             inFlight.signal(); return
         }
         var image = CIImage(cvPixelBuffer: current)
@@ -273,8 +312,8 @@ final class FrameView: NSView {
         let target = metalLayer.drawableSize
         image = image.transformed(by: CGAffineTransform(scaleX: target.width / image.extent.width,
                                                         y: target.height / image.extent.height))
-        context.render(image, to: drawable.texture, commandBuffer: command,
-                       bounds: CGRect(origin: .zero, size: target), colorSpace: CGColorSpaceCreateDeviceRGB())
+        renderer.context.render(image, to: drawable.texture, commandBuffer: command,
+                                bounds: CGRect(origin: .zero, size: target), colorSpace: renderer.colorSpace)
         let semaphore = inFlight
         command.addCompletedHandler { _ in semaphore.signal() }
         command.present(drawable)

@@ -44,12 +44,14 @@ public struct ModifierTapSequence: Sendable {
 }
 
 public enum HoverAction: Equatable, Sendable {
-    case frameRate, idleDetection, zoomIn, zoomOut, close
+    case frameRate, idleDetection, changeDetection, sensitiveDetection, zoomIn, zoomOut, close
 
     public static func resolve(keyCode: UInt16, repeated: Bool) -> HoverAction? {
         switch keyCode {
         case 3: return repeated ? nil : .frameRate
         case 2: return repeated ? nil : .idleDetection
+        case 8: return repeated ? nil : .changeDetection
+        case 1: return repeated ? nil : .sensitiveDetection
         case 24, 69: return .zoomIn
         case 27, 78: return .zoomOut
         case 51, 117: return repeated ? nil : .close
@@ -96,4 +98,48 @@ public enum PanelGeometry {
                       y: min(max(frame.maxY - height, visibleFrame.minY), visibleFrame.maxY - height),
                       width: width, height: height)
     }
+}
+
+public struct PreviewGesture: Sendable {
+    public private(set) var isPresented = false
+    private var pressedAt: TimeInterval?
+    public init() {}
+
+    /// 轻按保持预览，长按松开关闭；再次按下关闭已有预览。
+    @discardableResult public mutating func press(at time: TimeInterval) -> Bool {
+        if isPresented { close(); return false }
+        isPresented = true
+        pressedAt = time
+        return true
+    }
+
+    public mutating func release(at time: TimeInterval) {
+        guard let pressedAt else { return }
+        if time - pressedAt >= 0.25 { close() }
+        else { self.pressedAt = nil }
+    }
+
+    public mutating func present() { isPresented = true; pressedAt = nil }
+    public mutating func close() { isPresented = false; pressedAt = nil }
+}
+
+public struct PanelClickGesture: Sendable {
+    private var origin: CGPoint?
+    private var dragged = false
+    public init() {}
+
+    public mutating func begin(at point: CGPoint) { origin = point; dragged = false }
+    @discardableResult public mutating func move(to point: CGPoint) -> Bool {
+        guard let origin else { return false }
+        if hypot(point.x - origin.x, point.y - origin.y) >= 4 { dragged = true }
+        return dragged
+    }
+    public mutating func end(at point: CGPoint) -> Bool {
+        guard origin != nil else { return false }
+        move(to: point)
+        let clicked = !dragged
+        cancel()
+        return clicked
+    }
+    public mutating func cancel() { origin = nil; dragged = false }
 }

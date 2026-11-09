@@ -80,10 +80,16 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var enhanceContrast = false
     public var idleDetection = false
     public var idleSeconds: Double = 20
+    public var changeDetection = false
+    public var changeSeconds: Double = 10
+    public var sensitiveDetection = false
+    public var detectionNotifications = true
+    public var detectionCommand = ""
+    public var detectionCommandTimeout: Double = 15
     public var shortcut = Shortcut()
     public var regionShortcut: Shortcut?
     public var closeAllShortcut: Shortcut?
-    public var clickToFocus = false
+    public var clickToFocus = true
     public var sourceFocusBehavior: SourceFocusBehavior = .keep
     public var showOnFullscreenSpaces = true
     public var quickRegionCapture = true
@@ -92,6 +98,9 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var panelPosition: ZoomAnchor = .bottomRight
     public var triggerModifier: TriggerModifier = .function
     public var quickLook = true
+    public var dimOnHover = true
+    public var hoverBlur: Double = 0.35
+    public var showMenuBarIcon = true
 
     public var effectiveRegionShortcut: Shortcut? { regionShortcut ?? shortcut.regionVariant }
 
@@ -118,6 +127,8 @@ public struct Preferences: Codable, Equatable, Sendable {
         case multiWindow, defaultFPS, appFrameRates, preferredWidth, autoHide, enhanceContrast, idleDetection, idleSeconds, shortcut
         case regionShortcut, closeAllShortcut, clickToFocus, sourceFocusBehavior, showOnFullscreenSpaces
         case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickLook
+        case changeDetection, changeSeconds, sensitiveDetection, detectionNotifications, detectionCommand, detectionCommandTimeout
+        case dimOnHover, hoverBlur, showMenuBarIcon
     }
 
     public init(from decoder: Decoder) throws {
@@ -131,6 +142,12 @@ public struct Preferences: Codable, Equatable, Sendable {
         enhanceContrast = try c.decodeIfPresent(Bool.self, forKey: .enhanceContrast) ?? enhanceContrast
         idleDetection = try c.decodeIfPresent(Bool.self, forKey: .idleDetection) ?? idleDetection
         idleSeconds = try c.decodeIfPresent(Double.self, forKey: .idleSeconds) ?? idleSeconds
+        changeDetection = try c.decodeIfPresent(Bool.self, forKey: .changeDetection) ?? changeDetection
+        changeSeconds = try c.decodeIfPresent(Double.self, forKey: .changeSeconds) ?? changeSeconds
+        sensitiveDetection = try c.decodeIfPresent(Bool.self, forKey: .sensitiveDetection) ?? sensitiveDetection
+        detectionNotifications = try c.decodeIfPresent(Bool.self, forKey: .detectionNotifications) ?? detectionNotifications
+        detectionCommand = try c.decodeIfPresent(String.self, forKey: .detectionCommand) ?? detectionCommand
+        detectionCommandTimeout = try c.decodeIfPresent(Double.self, forKey: .detectionCommandTimeout) ?? detectionCommandTimeout
         shortcut = try c.decodeIfPresent(Shortcut.self, forKey: .shortcut) ?? shortcut
         regionShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .regionShortcut)
         closeAllShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .closeAllShortcut)
@@ -143,6 +160,9 @@ public struct Preferences: Codable, Equatable, Sendable {
         panelPosition = try c.decodeIfPresent(ZoomAnchor.self, forKey: .panelPosition) ?? panelPosition
         triggerModifier = try c.decodeIfPresent(TriggerModifier.self, forKey: .triggerModifier) ?? triggerModifier
         quickLook = try c.decodeIfPresent(Bool.self, forKey: .quickLook) ?? quickLook
+        dimOnHover = try c.decodeIfPresent(Bool.self, forKey: .dimOnHover) ?? dimOnHover
+        hoverBlur = try c.decodeIfPresent(Double.self, forKey: .hoverBlur) ?? hoverBlur
+        showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? showMenuBarIcon
     }
 
     public func fps(for bundleID: String) -> Int {
@@ -155,6 +175,9 @@ public struct Preferences: Codable, Equatable, Sendable {
         appFrameRates = appFrameRates.filter { Self.frameRates.contains($0.value) }
         preferredWidth = preferredWidth.isFinite ? min(1600, max(160, preferredWidth)) : 360
         idleSeconds = idleSeconds.isFinite ? min(600, max(5, idleSeconds)) : 20
+        changeSeconds = changeSeconds.isFinite ? min(600, max(1, changeSeconds)) : 10
+        detectionCommandTimeout = detectionCommandTimeout.isFinite ? min(300, max(1, detectionCommandTimeout)) : 15
+        hoverBlur = hoverBlur.isFinite ? min(1, max(0, hoverBlur)) : 0.35
         cornerRadius = cornerRadius.isFinite ? min(30, max(0, cornerRadius)) : 14
     }
 }

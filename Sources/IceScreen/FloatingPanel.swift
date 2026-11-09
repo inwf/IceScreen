@@ -41,6 +41,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private var sourcePaused = false
     private var preserveOnSourceFocus = false
     private var clickToFocus = false
+    private var panelOpacity = 1.0
     private var triggerLabel = "fn"
     private var interactionDepth = 0
     private var detection = ContentDetection()
@@ -203,6 +204,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         surface.showHints = value.showHoverHints
         surface.dimOnHover = value.dimOnHover
         surface.hoverBlur = value.hoverBlur
+        panelOpacity = value.panelOpacity
+        if !autoHidden { panel.alphaValue = panelOpacity }
         triggerLabel = value.triggerModifier.display
         surface.triggerLabel = triggerLabel
         panel.collectionBehavior = value.showOnFullscreenSpaces ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary] : [.canJoinAllSpaces, .stationary]
@@ -262,7 +265,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             panel.orderOut(nil)
             surface.frameView.releaseFrame()
         } else {
-            panel.alphaValue = 1
+            panel.alphaValue = panelOpacity
             panel.ignoresMouseEvents = false
             panel.orderFrontRegardless()
         }
@@ -284,7 +287,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         panel.ignoresMouseEvents = value
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
-            panel.animator().alphaValue = value ? 0 : 1
+            panel.animator().alphaValue = value ? 0 : panelOpacity
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, !self.autoHidden, !self.closed else { return }

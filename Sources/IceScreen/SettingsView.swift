@@ -31,6 +31,7 @@ struct SettingsView: View {
                 switch page {
                 case .general: general
                 case .floatingWindows: floatingWindows
+                case .appearance: appearance
                 case .capture: capture
                 case .detection: detection
                 case .keyboard: keyboard
@@ -131,17 +132,6 @@ struct SettingsView: View {
             } footer: {
                 Text("悬停时双击 \(store.value.triggerModifier.display) 可随时开关自动隐藏。浮窗透明时仍可按 Delete 关闭，或双击 \(store.value.triggerModifier.display) 恢复显示和操作。")
             }
-            Section("浮窗显示") {
-                Toggle("显示操作提示", isOn: $store.value.showHoverHints)
-                Toggle("Space 预览来源窗口", isOn: $store.value.quickLook)
-                Toggle("悬停时背景变暗", isOn: $store.value.dimOnHover)
-                LabeledContent("悬停模糊强度", value: "\(Int(store.value.hoverBlur * 100))%")
-                Slider(value: $store.value.hoverBlur, in: 0...1, step: 0.05).disabled(!store.value.dimOnHover)
-                Text("操作提示消失后，画面中央恢复清晰，仅在按钮周围保留效果。")
-                    .font(.caption).foregroundStyle(.secondary)
-                LabeledContent("圆角", value: "\(Int(store.value.cornerRadius)) pt")
-                Slider(value: $store.value.cornerRadius, in: 0...30, step: 1)
-            }
             Section("关闭所有浮窗") {
                 Toggle("启用快捷键", isOn: Binding(get: { store.value.closeAllShortcut != nil }, set: {
                     let candidate = Shortcut(keyCode: 35, command: true, function: false, shift: true, label: "P")
@@ -155,13 +145,39 @@ struct SettingsView: View {
         }.formStyle(.grouped)
     }
 
+    private var appearance: some View {
+        Form {
+            Section("浮窗形状") {
+                LabeledContent("圆角", value: "\(Int(store.value.cornerRadius)) pt")
+                Slider(value: $store.value.cornerRadius, in: 0...30, step: 1)
+                LabeledContent("透明度", value: "\(Int(store.value.panelOpacity * 100))%")
+                Slider(value: $store.value.panelOpacity, in: 0.35...1, step: 0.05)
+                Text("透明度只影响浮窗本体，自动隐藏时仍会完全穿透。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("画面效果") {
+                Toggle("增强对比度和锐度", isOn: $store.value.enhanceContrast)
+                Text("适合缩小后的文字和低对比度界面。关闭后使用来源窗口的原始画面。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("悬停时控件周围变暗", isOn: $store.value.dimOnHover)
+                LabeledContent("边缘变暗强度", value: "\(Int(store.value.hoverBlur * 100))%")
+                Slider(value: $store.value.hoverBlur, in: 0...1, step: 0.05).disabled(!store.value.dimOnHover)
+            }
+            Section("交互提示") {
+                Toggle("显示操作提示", isOn: $store.value.showHoverHints)
+                Toggle("Space 预览来源窗口", isOn: $store.value.quickLook)
+                Text("操作提示消失后，画面中央恢复清晰，仅在按钮周围保留效果。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.formStyle(.grouped)
+    }
+
     private var capture: some View {
         Form {
             Section {
                 Picker("默认帧率", selection: $store.value.defaultFPS) {
                     ForEach(Preferences.frameRates, id: \.self) { Text("\($0) FPS").tag($0) }
                 }
-                Toggle("增强对比度和清晰度", isOn: $store.value.enhanceContrast)
                 Toggle("\(store.value.triggerModifier.display) + 双击快速捕获局部区域", isOn: $store.value.quickRegionCapture)
             } header: { Text("画面") } footer: {
                 Text("默认 10 FPS。静态进度可用 1 FPS，视频可用 30 或 60 FPS。悬停时按 F 打开帧率菜单，选择会按应用保存。")
@@ -295,12 +311,13 @@ struct SettingsView: View {
 }
 
 private enum SettingsPage: CaseIterable, Hashable, Identifiable {
-    case general, floatingWindows, capture, detection, keyboard, about
+    case general, floatingWindows, appearance, capture, detection, keyboard, about
     var id: Self { self }
     var title: String {
         switch self {
         case .general: return "通用"
         case .floatingWindows: return "浮窗"
+        case .appearance: return "外观"
         case .capture: return "捕获"
         case .detection: return "检测"
         case .keyboard: return "操作"
@@ -311,6 +328,7 @@ private enum SettingsPage: CaseIterable, Hashable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .floatingWindows: return "pip"
+        case .appearance: return "rectangle.on.rectangle.angled"
         case .capture: return "rectangle.dashed"
         case .detection: return "waveform.path"
         case .keyboard: return "keyboard"

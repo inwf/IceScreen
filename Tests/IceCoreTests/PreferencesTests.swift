@@ -41,13 +41,16 @@ final class PreferencesTests: XCTestCase {
         preferences.detectionCommandTimeout = 30
         preferences.showMenuBarIcon = false
         preferences.hoverBlur = 0.7
+        preferences.panelOpacity = 0.65
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences)), preferences)
         preferences.changeSeconds = -10
         preferences.detectionCommandTimeout = .infinity
         preferences.hoverBlur = 20
+        preferences.panelOpacity = -4
         preferences.normalize()
         XCTAssertEqual(preferences.changeSeconds, 1)
         XCTAssertEqual(preferences.detectionCommandTimeout, 15)
         XCTAssertEqual(preferences.hoverBlur, 1)
+        XCTAssertEqual(preferences.panelOpacity, 0.35)
     }
 }

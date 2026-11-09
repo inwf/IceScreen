@@ -100,6 +100,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var quickLook = true
     public var dimOnHover = true
     public var hoverBlur: Double = 0.35
+    public var panelOpacity: Double = 1
     public var showMenuBarIcon = true
 
     public var effectiveRegionShortcut: Shortcut? { regionShortcut ?? shortcut.regionVariant }
@@ -128,7 +129,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         case regionShortcut, closeAllShortcut, clickToFocus, sourceFocusBehavior, showOnFullscreenSpaces
         case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickLook
         case changeDetection, changeSeconds, sensitiveDetection, detectionNotifications, detectionCommand, detectionCommandTimeout
-        case dimOnHover, hoverBlur, showMenuBarIcon
+        case dimOnHover, hoverBlur, panelOpacity, showMenuBarIcon
     }
 
     public init(from decoder: Decoder) throws {
@@ -162,6 +163,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         quickLook = try c.decodeIfPresent(Bool.self, forKey: .quickLook) ?? quickLook
         dimOnHover = try c.decodeIfPresent(Bool.self, forKey: .dimOnHover) ?? dimOnHover
         hoverBlur = try c.decodeIfPresent(Double.self, forKey: .hoverBlur) ?? hoverBlur
+        panelOpacity = try c.decodeIfPresent(Double.self, forKey: .panelOpacity) ?? panelOpacity
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? showMenuBarIcon
     }
 
@@ -178,6 +180,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         changeSeconds = changeSeconds.isFinite ? min(600, max(1, changeSeconds)) : 10
         detectionCommandTimeout = detectionCommandTimeout.isFinite ? min(300, max(1, detectionCommandTimeout)) : 15
         hoverBlur = hoverBlur.isFinite ? min(1, max(0, hoverBlur)) : 0.35
+        panelOpacity = panelOpacity.isFinite ? min(1, max(0.35, panelOpacity)) : 1
         cornerRadius = cornerRadius.isFinite ? min(30, max(0, cornerRadius)) : 14
     }
 }

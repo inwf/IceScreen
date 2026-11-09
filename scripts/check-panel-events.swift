@@ -78,30 +78,30 @@ enum PanelEventChecks {
         func hit(_ x: CGFloat, _ y: CGFloat) -> NSView? {
             surface.hitTest(surface.convert(NSPoint(x: x, y: y), to: surface.superview))
         }
-        func checkButton(_ x: CGFloat, _ y: CGFloat, _ action: String) {
-            guard let button = hit(x, y) as? PanelButton else { fatalError("Expected a button at \(x), \(y).") }
-            precondition(button.action == NSSelectorFromString(action), "Wrong floating panel action.")
-            precondition(button.acceptsFirstMouse(for: nil), "Panel controls must accept the first click.")
-            precondition(surface.target(atWindowPoint: surface.convert(NSPoint(x: x, y: y), to: nil)) === button,
-                         "Window-coordinate targeting must preserve native button handling.")
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *) {
-                precondition(button.bezelStyle == .glass && button.isBordered,
-                             "Floating controls must use the native Liquid Glass button bezel.")
+        func checkButton(_ x: CGFloat, _ y: CGFloat, _ action: PanelAction) {
+            surface.layoutSubtreeIfNeeded()
+            settle()
+            let point = surface.convert(NSPoint(x: x, y: y), to: nil)
+            precondition(surface.control(atWindowPoint: point) == action, "Wrong floating panel action.")
+            guard let control = hit(x, y), !(control is PanelInput) else {
+                fatalError("Expected a native control target at \(x), \(y).")
             }
-            #endif
+            precondition(surface.target(atWindowPoint: point) === control,
+                         "Window-coordinate targeting must preserve native button handling.")
         }
 
         precondition(hit(24, 24) is PanelInput, "Hidden controls must leave content interactive.")
         surface.setHovered(true)
-        checkButton(24, 24, "closePanel")
-        checkButton(308, 24, "showDetectionMenu")
-        checkButton(24, 216, "focusSource")
-        checkButton(296, 216, "showPreview")
-        checkButton(336, 216, "showMenu")
+        checkButton(24, 24, .close)
+        checkButton(308, 24, .detection)
+        checkButton(24, 216, .focus)
+        checkButton(296, 216, .preview)
+        checkButton(336, 216, .menu)
         guard let content = hit(180, 120) as? PanelInput else { fatalError("The hint must not intercept content clicks.") }
         precondition(content.acceptsFirstMouse(for: nil), "Content must accept the first click.")
         precondition(!content.mouseDownCanMoveWindow, "Content must own mouse-down and mouse-up delivery.")
+        precondition(!content.needsPanelToBecomeKey && !panel.canBecomeKey,
+                     "Content clicks must work while the floating panel stays non-key.")
         let target = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 240, height: 120),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         target.isReleasedWhenClosed = false
@@ -123,6 +123,11 @@ enum PanelEventChecks {
                 target.orderOut(nil)
             }
         }
+        NSApp.postEvent(event(.leftMouseUp, at: NSPoint(x: 182, y: 121)), atStart: true)
+        NSApp.postEvent(event(.leftMouseDragged, at: NSPoint(x: 181, y: 121)), atStart: true)
+        NSApp.sendEvent(event(.leftMouseDown))
+        precondition(target.isVisible, "Small pointer jitter must still focus the destination.")
+        target.orderOut(nil)
         NSApp.postEvent(event(.leftMouseUp, clickCount: 2), atStart: true)
         NSApp.sendEvent(event(.leftMouseDown, clickCount: 2))
         precondition(!target.isVisible, "The second click must not duplicate the single-click action.")
@@ -150,28 +155,33 @@ enum PanelEventChecks {
         surface.isHidden = false
 
         surface.previewEnabled = false
-        checkButton(24, 216, "focusSource")
-        checkButton(336, 216, "showMenu")
+        checkButton(24, 216, .focus)
+        checkButton(336, 216, .menu)
         panel.setContentSize(NSSize(width: 120, height: 80))
         surface.layoutSubtreeIfNeeded()
-        checkButton(24, 24, "closePanel")
-        checkButton(96, 24, "showMenu")
+        checkButton(24, 24, .close)
+        checkButton(96, 24, .menu)
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 240))
         panel.contentView = container
         surface.frame = NSRect(x: 30, y: 40, width: 120, height: 80)
         container.addSubview(surface)
-        checkButton(24, 24, "closePanel")
-        checkButton(96, 24, "showMenu")
+        checkButton(24, 24, .close)
+        checkButton(96, 24, .menu)
         print("Passed native control targeting, first-click acceptance, compact layout, and flipped-coordinate checks.")
     }
 
     @MainActor private static func makePanel(_ frame: NSRect) -> FloatingPanel {
-        let panel = FloatingPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let panel = FloatingPanel(contentRect: frame, styleMask: [.borderless, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isMovableByWindowBackground = false
+        panel.acceptsMouseMovedEvents = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = .windowBackgroundColor
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
         return panel
     }
 

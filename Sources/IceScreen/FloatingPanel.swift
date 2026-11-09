@@ -30,12 +30,14 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var onDetection: ((DetectionEvent) -> Void)?
     var onDetectionEnabled: (() -> Void)?
     var onClose: ((CaptureSession) -> Void)?
-    var onFocus: ((SCWindow) -> Bool)?
+    var onFocus: ((SCWindow) async throws -> Void)?
     var onPreview: (() -> Void)?
     var onFrameRate: ((String, Int) -> Void)?
     var onResize: ((Double) -> Void)?
     var onChange: (() -> Void)?
     private var resizeTask: Task<Void, Never>?
+    private var focusTask: Task<Void, Never>?
+    private var closeAfterFocus = false
     private var closed = false
     private var userIsResizing = false
     private var sourceSize: CGSize
@@ -215,7 +217,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 
     func sourceFocusChanged(windowID: CGWindowID?, behavior: SourceFocusBehavior) {
         let focused = windowID == source.windowID
-        if !focused { preserveOnSourceFocus = false }
+        if !focused && focusTask == nil { preserveOnSourceFocus = false }
         if focused && behavior == .close && !preserveOnSourceFocus { close(); return }
         sourcePaused = focused && behavior == .pause
         syncRunning()
@@ -230,7 +232,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 
     func doubleClicked(reset: Bool) {
         if reset { resetZoom() }
-        else if onFocus?(source) == true { close() }
+        else { requestFocus(closeAfter: true) }
     }
 
     func showFrameRateMenu() {
@@ -254,9 +256,32 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     @objc func toggleEnhanced() { enhanced.toggle(); updateStatus() }
     @objc func toggleAutoHide() { autoHide.toggle() }
     @objc func focusSource() {
+        requestFocus(closeAfter: false)
+    }
+    private func requestFocus(closeAfter: Bool) {
+        guard !closed, let onFocus else { return }
         preserveOnSourceFocus = true
-        if onFocus?(source) != true { preserveOnSourceFocus = false }
-        Self.interactionLog.debug("Source activation accepted=\(self.preserveOnSourceFocus)")
+        closeAfterFocus = closeAfterFocus || closeAfter
+        guard focusTask == nil else { return }
+        failure = nil
+        updateStatus()
+        focusTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.focusTask = nil; self.closeAfterFocus = false }
+            do {
+                try await onFocus(self.source)
+                try Task.checkCancellation()
+                Self.interactionLog.debug("Source window focus confirmed")
+                if self.closeAfterFocus { self.close() }
+            } catch {
+                self.preserveOnSourceFocus = false
+                if !Task.isCancelled && !(error is CancellationError) {
+                    self.failure = error.localizedDescription
+                    self.updateStatus()
+                    Self.interactionLog.error("Source window focus failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
     }
     @objc func showPreview() { onPreview?() }
     @objc func resetZoom() { setViewport(.full) }
@@ -346,6 +371,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     @objc func close() {
+        focusTask?.cancel()
         guard !closed else { return }
         closed = true
         resizeTask?.cancel()
@@ -563,7 +589,6 @@ final class PanelSurface: NSView {
     private func perform(_ action: PanelAction) {
         switch action {
         case .close: owner?.close()
-        case .focus: owner?.focusSource()
         case .preview: owner?.showPreview()
         case .detection: showDetectionMenu()
         case .menu: showMenu()
@@ -660,6 +685,7 @@ final class PanelInput: NSControl {
     private var clickGesture = PanelClickGesture()
     private var interacting = false
     private var doubleClick = false
+    private var resetOnDoubleClick = false
     private var dragEvent: NSEvent?
     private var selection: CGRect?
 
@@ -673,10 +699,11 @@ final class PanelInput: NSControl {
         dragEvent = event
         clickGesture.begin(at: event.locationInWindow)
         doubleClick = event.clickCount == 2
+        resetOnDoubleClick = event.modifierFlags.contains(.command)
         owner?.beginInteraction()
         interacting = true
         if event.clickCount == 2 {
-            owner?.doubleClicked(reset: event.modifierFlags.contains(.command))
+            moving = false
         } else if event.modifierFlags.contains(.command) {
             start = convert(event.locationInWindow, from: nil)
         } else { moving = true }
@@ -717,7 +744,10 @@ final class PanelInput: NSControl {
     }
     override func mouseUp(with event: NSEvent) {
         defer { cancelGesture() }
-        if clickGesture.end(at: event.locationInWindow), !doubleClick, start == nil { onClick?() }
+        if clickGesture.end(at: event.locationInWindow), start == nil {
+            if doubleClick { owner?.doubleClicked(reset: resetOnDoubleClick) }
+            else { onClick?() }
+        }
         guard let selection, selection.width >= 6, selection.height >= 6, let owner else { return }
         owner.setViewport(owner.viewport.selecting(CGRect(x: selection.minX / bounds.width,
             y: selection.minY / bounds.height, width: selection.width / bounds.width, height: selection.height / bounds.height)))

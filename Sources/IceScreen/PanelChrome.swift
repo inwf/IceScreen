@@ -3,13 +3,12 @@ import AppKit
 import SwiftUI
 
 enum PanelAction: String, CaseIterable {
-    case close, detection, focus, preview, menu
+    case close, detection, preview, menu
 
     var symbol: String {
         switch self {
         case .close: return "xmark"
         case .detection: return "waveform.path"
-        case .focus: return "macwindow"
         case .preview: return "arrow.up.left.and.arrow.down.right"
         case .menu: return "ellipsis"
         }
@@ -19,7 +18,6 @@ enum PanelAction: String, CaseIterable {
         switch self {
         case .close: return "关闭浮窗"
         case .detection: return "内容检测"
-        case .focus: return "定位来源窗口"
         case .preview: return "预览来源窗口 · Space"
         case .menu: return "浮窗设置"
         }
@@ -56,7 +54,6 @@ final class PanelChromeState: ObservableObject {
             items.append(.init(id: .menu, frame: CGRect(x: size.width - 40,
                 y: compact ? 8 : size.height - 40, width: 32, height: 32)))
             if !compact {
-                items.append(.init(id: .focus, frame: CGRect(x: 8, y: size.height - 40, width: 32, height: 32)))
                 if value.preview {
                     items.append(.init(id: .preview, frame: CGRect(x: size.width - 80,
                         y: size.height - 40, width: 32, height: 32)))

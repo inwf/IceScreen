@@ -241,7 +241,7 @@ final class ApplicationModel: ObservableObject {
         let generation = captureGeneration
         selectionTask = Task {
             do {
-                try catalog.focus(source)
+                try await catalog.focus(source)
                 try await Task.sleep(for: .milliseconds(180))
                 await catalog.refresh()
                 guard !Task.isCancelled, generation == captureGeneration else { return }
@@ -275,9 +275,8 @@ final class ApplicationModel: ObservableObject {
             if self.sessions.isEmpty { self.stopSessionMonitoring() }
         }
         session.onFocus = { [weak self] source in
-            guard let self else { return false }
-            do { try self.catalog.focus(source); return true }
-            catch { self.error = error.localizedDescription; return false }
+            guard let self else { throw CancellationError() }
+            try await self.catalog.focus(source)
         }
         session.onPreview = { [weak self, weak session] in
             guard let self, let session else { return }

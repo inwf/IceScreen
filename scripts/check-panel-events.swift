@@ -94,7 +94,7 @@ enum PanelEventChecks {
         surface.setHovered(true)
         checkButton(24, 24, .close)
         checkButton(308, 24, .detection)
-        checkButton(24, 216, .focus)
+        precondition(hit(24, 216) is PanelInput, "The lower-left content must receive clicks.")
         checkButton(296, 216, .preview)
         checkButton(336, 216, .menu)
         guard let content = hit(180, 120) as? PanelInput else { fatalError("The hint must not intercept content clicks.") }
@@ -116,7 +116,7 @@ enum PanelEventChecks {
         }
         for hovered in [false, true] {
             surface.setHovered(hovered)
-            for point in [NSPoint(x: 70, y: 58), NSPoint(x: 180, y: 120), NSPoint(x: 290, y: 184)] {
+            for point in [NSPoint(x: 70, y: 58), NSPoint(x: 180, y: 120), NSPoint(x: 290, y: 184), NSPoint(x: 24, y: 216)] {
                 NSApp.postEvent(event(.leftMouseUp, at: point), atStart: true)
                 NSApp.sendEvent(event(.leftMouseDown, at: point))
                 precondition(target.isVisible, "A content click must focus its destination when tracking completes.")
@@ -155,7 +155,7 @@ enum PanelEventChecks {
         surface.isHidden = false
 
         surface.previewEnabled = false
-        checkButton(24, 216, .focus)
+        precondition(hit(24, 216) is PanelInput, "The lower-left content must remain interactive.")
         checkButton(336, 216, .menu)
         panel.setContentSize(NSSize(width: 120, height: 80))
         surface.layoutSubtreeIfNeeded()

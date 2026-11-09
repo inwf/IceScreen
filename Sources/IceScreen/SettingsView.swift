@@ -99,6 +99,9 @@ struct SettingsView: View {
             }
             Section("来源窗口与预览") {
                 Toggle("单击定位来源窗口并保留浮窗", isOn: $store.value.clickToFocus)
+                Toggle("捕获后自动移走来源窗口", isOn: $store.value.moveSourceOffscreen)
+                Text("单击浮窗返回来源，再次单击将来源移走。双击返回并关闭浮窗。关闭浮窗或退出时恢复来源位置；全屏和无法移动的窗口保持原位。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("来源窗口获得焦点时", selection: $store.value.sourceFocusBehavior) {
                     Text("保持浮窗").tag(SourceFocusBehavior.keep)
                     Text("暂停捕获").tag(SourceFocusBehavior.pause)
@@ -144,6 +147,8 @@ struct SettingsView: View {
                 Toggle("显示进度条并允许调整进度", isOn: $store.value.mediaSeek).disabled(!store.value.mediaControls)
                 Toggle("轻按 Space 播放或暂停", isOn: $store.value.mediaSpace).disabled(!store.value.mediaControls)
                 Text("鼠标悬停浮窗时显示播放、暂停、上一首和下一首。媒体需要向系统提供播放状态；直播或禁止跳转的内容不显示进度条。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("Music、TV、Spotify、Swinsian 和 VLC 的进度通过应用自动化调整，首次使用时请允许系统的自动化请求。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("快捷操作") {

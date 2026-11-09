@@ -17,6 +17,14 @@ final class MediaPlaybackTests: XCTestCase {
         var paused = value; paused.rate = 0
         XCTAssertEqual(paused.position(at: 105), 10)
     }
+    func testNewSettingsMigrateAndPersistExplicitChoices() throws {
+        let legacy = try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8))
+        XCTAssertTrue(legacy.mediaControls && legacy.mediaSeek && legacy.mediaSpace && legacy.smartRegionCapture && legacy.moveSourceOffscreen)
+        var changed = legacy
+        changed.mediaControls = false; changed.mediaSeek = false; changed.mediaSpace = false
+        changed.smartRegionCapture = false; changed.moveSourceOffscreen = false
+        XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(changed)), changed)
+    }
     func testMatchingNeverChoosesUnrelatedOrAmbiguousPlayer() {
         let values = [track(), track("other", pid: 43, bundle: "org.other")]
         XCTAssertEqual(MediaSnapshot.match(values, pid: 42, bundleID: "org.player", title: "Title")?.id, "track")

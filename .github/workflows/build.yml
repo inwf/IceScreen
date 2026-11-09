@@ -36,6 +36,8 @@ jobs:
           dist/IceScreen.app/Contents/MacOS/IceScreen --help
           lipo -info dist/IceScreen.app/Contents/MacOS/IceScreen
           ditto -c -k --keepParent dist/IceScreen.app dist/IceScreen-macOS.zip
+      - name: Check native media bridge
+        run: python3 scripts/check-media-bridge.py dist/IceScreen.app
       - uses: actions/upload-artifact@v4
         with:
           name: IceScreen-macOS

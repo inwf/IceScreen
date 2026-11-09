@@ -87,7 +87,7 @@ private final class MediaBridge {
             var snapshots: [MediaSnapshot] = []
             var targets: [String: AnyObject] = [:]
             for client in (list as? [AnyObject] ?? []).prefix(32) {
-                let identifier = "\(self.pid(client)):\(self.bundle(client)?.takeUnretainedValue() as String? ?? "")"
+                let identifier = "\(self.pid(client)):\(self.bundle(client)?.takeUnretainedValue() as String? ?? ""):\(CFHash(client))"
                 group.enter()
                 self.info(client, nil, false, .main) { data in
                     defer { group.leave() }

@@ -7,14 +7,15 @@
     <key>CFBundleName</key><string>IceScreen</string>
     <key>CFBundleDisplayName</key><string>IceScreen</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.1.11</string>
-    <key>CFBundleVersion</key><string>13</string>
+    <key>CFBundleShortVersionString</key><string>1.2.0</string>
+    <key>CFBundleVersion</key><string>14</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSScreenCaptureUsageDescription</key><string>IceScreen captures the windows you choose and displays them in floating panels.</string>
+    <key>NSAppleEventsUsageDescription</key><string>IceScreen adjusts playback position in the media application shown in your floating window.</string>
     <key>NSHumanReadableCopyright</key><string>Copyright © 2026 IceScreen contributors. GPL-3.0-or-later.</string>
 </dict>
 </plist>

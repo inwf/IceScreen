@@ -33,7 +33,7 @@ if [[ "$configuration" == "release" ]]; then
     strip -x "$app_dir/Contents/MacOS/IceScreen"
 fi
 codesign --force --options runtime --sign "$signing_identity" "$app_dir/Contents/Frameworks/libIceMediaBridge.dylib"
-codesign --force --options runtime --sign "$signing_identity" "$app_dir"
+codesign --force --options runtime --entitlements Sources/IceScreen/Resources/IceScreen.entitlements --sign "$signing_identity" "$app_dir"
 codesign --verify --strict --verbose=2 "$app_dir"
 echo "Built $app_dir"
 bash scripts/package-dmg.sh

@@ -8,12 +8,15 @@ final class MediaController {
     private var input: FileHandle?
     private var readTask: Task<Void, Never>?
     private var generation = 0
+    private let automation = MediaSeekAutomation()
     private(set) var snapshots: [MediaSnapshot] = []
     var onChange: (([MediaSnapshot]) -> Void)?
     var onError: ((String) -> Void)?
 
     func start() {
         guard process == nil else { return }
+        automation.onError = { [weak self] in self?.onError?($0) }
+        automation.onComplete = { [weak self] in self?.send(.init(action: "refresh")) }
         guard let resources = Bundle.main.resourceURL else { onError?("找不到媒体控制资源。"); return }
         let library = Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/libIceMediaBridge.dylib")
         let script = resources.appendingPathComponent("media-bridge.pl")
@@ -48,12 +51,19 @@ final class MediaController {
     }
     func send(_ request: MediaRequest) {
         guard let input else { return }
+        if request.action == "seek", let position = request.position,
+           let source = snapshots.first(where: { $0.id == request.id }),
+           let bundle = [source.parentBundleID, source.bundleID].compactMap({ $0 }).first(where: { MediaSeekAutomation.positionProperties[$0] != nil }) {
+            automation.seek(bundle: bundle, position: position)
+            return
+        }
         do {
             var data = try JSONEncoder().encode(request); data.append(10)
             try input.write(contentsOf: data)
         } catch { stop(); onError?(error.localizedDescription) }
     }
     func stop() {
+        automation.stop()
         generation += 1; readTask?.cancel(); readTask = nil
         input?.closeFile(); input = nil
         if process?.isRunning == true { process?.terminate() }

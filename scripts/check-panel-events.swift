@@ -55,6 +55,8 @@ enum PanelEventChecks {
         preferences.cornerRadius = 30
         preferences.panelOpacity = 0.4
         preferences.enhanceContrast = true
+        preferences.contrastStrength = 0.37
+        preferences.sharpnessStrength = 0.81
         preferences.hoverBlur = 0.8
         var rendered = false
         preview.surface.frameView.onFirstFrameRendered = { rendered = true }
@@ -69,6 +71,7 @@ enum PanelEventChecks {
         precondition(preview.surface.frameView.layer!.cornerRadius == 30 && preview.surface.frameView.layer!.masksToBounds,
                      "The preview image must retain the requested corner clipping.")
         precondition(preview.surface.frameView.enhanced && preview.surface.hoverBlur == 0.8)
+        precondition(preview.surface.frameView.enhancement.contrast == 0.37 && preview.surface.frameView.enhancement.sharpness == 0.81)
         let contentPoint = preview.convert(CGPoint(x: preview.bounds.midX, y: preview.bounds.midY), to: preview.superview)
         precondition(preview.hitTest(contentPoint) === preview, "Preview content must not route to floating-window gestures.")
         precondition(!preview.mouseDownCanMoveWindow, "Preview content must not start dragging the settings window.")
@@ -98,6 +101,8 @@ enum PanelEventChecks {
         preview.update(preferences, original: true, dark: false)
         precondition(!preview.surface.frameView.enhanced && preferences.enhanceContrast,
                      "Comparing the original must leave the actual preference enabled.")
+        precondition(preview.surface.frameView.enhancement.contrast == 0.37 && preview.surface.frameView.enhancement.sharpness == 0.81,
+                     "Original comparison must preserve both configured enhancement strengths.")
         preview.update(preferences, original: false, dark: true)
         precondition(preview.surface.frameView.enhanced)
         window.setContentSize(NSSize(width: 480, height: 220))

@@ -519,7 +519,7 @@ final class PanelSurface: NSView {
     var clickToFocus = true { didSet { updateHint() } }
     var previewEnabled = true { didSet { updateHint() } }
     var dimOnHover = true { didSet { updateHint() } }
-    var hoverBlur: Double = 0.35 { didSet { dim.strength = hoverBlur } }
+    var hoverBlur: Double = Preferences().hoverBlur { didSet { dim.strength = hoverBlur } }
     weak var owner: CaptureSession? { didSet { input.owner = owner; resizeInput.owner = owner } }
 
     override init(frame: NSRect) {
@@ -549,7 +549,7 @@ final class PanelSurface: NSView {
         layer?.cornerRadius = value.cornerRadius
         frameView.layer?.cornerRadius = value.cornerRadius
         dim.layer?.cornerRadius = value.cornerRadius
-        frameView.enhanced = enhanced
+        frameView.enhancement = .init(enabled: enhanced, contrast: value.contrastStrength, sharpness: value.sharpnessStrength)
         if showHints != value.showHoverHints { showHints = value.showHoverHints }
         if dimOnHover != value.dimOnHover { dimOnHover = value.dimOnHover }
         if hoverBlur != value.hoverBlur { hoverBlur = value.hoverBlur }
@@ -660,9 +660,9 @@ final class PanelSurface: NSView {
 
 final class PanelDimView: NSView {
     override var isFlipped: Bool { true }
-    private let top = NSHostingView(rootView: PanelEdgeScrim(top: true, strength: 0.35))
-    private let bottom = NSHostingView(rootView: PanelEdgeScrim(top: false, strength: 0.35))
-    var strength: Double = 0.35 {
+    private let top = NSHostingView(rootView: PanelEdgeScrim(top: true, strength: Preferences().hoverBlur))
+    private let bottom = NSHostingView(rootView: PanelEdgeScrim(top: false, strength: Preferences().hoverBlur))
+    var strength: Double = Preferences().hoverBlur {
         didSet {
             guard strength != oldValue else { return }
             top.rootView = PanelEdgeScrim(top: true, strength: strength)

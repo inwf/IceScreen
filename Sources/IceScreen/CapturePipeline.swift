@@ -265,13 +265,22 @@ private final class FrameRenderer {
 
 @MainActor
 final class FrameView: NSView {
+    struct Enhancement: Equatable {
+        var enabled = false
+        var contrast = Preferences().contrastStrength
+        var sharpness = Preferences().sharpnessStrength
+    }
     private let metalLayer = CAMetalLayer()
     private let renderer = FrameRenderer.shared
     private var current: CVPixelBuffer?
     private let inFlight = DispatchSemaphore(value: 2)
     private var frameGeneration = 0
     var onFirstFrameRendered: (() -> Void)?
-    var enhanced = false { didSet { if oldValue != enhanced { render() } } }
+    var enhancement = Enhancement() { didSet { if oldValue != enhancement { render() } } }
+    var enhanced: Bool {
+        get { enhancement.enabled }
+        set { enhancement.enabled = newValue }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -307,9 +316,11 @@ final class FrameView: NSView {
             inFlight.signal(); return
         }
         var image = CIImage(cvPixelBuffer: current)
-        if enhanced {
-            image = image.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.2])
-                .applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.65])
+        if enhanced && enhancement.contrast > 0 {
+            image = image.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1 + 0.4 * enhancement.contrast])
+        }
+        if enhanced && enhancement.sharpness > 0 {
+            image = image.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 1.3 * enhancement.sharpness])
         }
         let target = metalLayer.drawableSize
         image = image.transformed(by: CGAffineTransform(scaleX: target.width / image.extent.width,

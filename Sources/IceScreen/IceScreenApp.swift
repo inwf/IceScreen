@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 820, height: 640),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = "IceScreen 设置"
+            window.backgroundColor = .windowBackgroundColor
             window.toolbarStyle = .unified
             window.contentMinSize = NSSize(width: 740, height: 540)
             window.isReleasedWhenClosed = false

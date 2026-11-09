@@ -78,6 +78,8 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var preferredWidth: Double = 360
     public var autoHide = false
     public var enhanceContrast = false
+    public var contrastStrength: Double = 0.5
+    public var sharpnessStrength: Double = 0.5
     public var idleDetection = false
     public var idleSeconds: Double = 20
     public var changeDetection = false
@@ -99,7 +101,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var triggerModifier: TriggerModifier = .function
     public var quickLook = true
     public var dimOnHover = true
-    public var hoverBlur: Double = 0.35
+    public var hoverBlur: Double = 1
     public var panelOpacity: Double = 1
     public var showMenuBarIcon = true
 
@@ -130,6 +132,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickLook
         case changeDetection, changeSeconds, sensitiveDetection, detectionNotifications, detectionCommand, detectionCommandTimeout
         case dimOnHover, hoverBlur, panelOpacity, showMenuBarIcon
+        case contrastStrength, sharpnessStrength
     }
 
     public init(from decoder: Decoder) throws {
@@ -141,6 +144,8 @@ public struct Preferences: Codable, Equatable, Sendable {
         preferredWidth = try c.decodeIfPresent(Double.self, forKey: .preferredWidth) ?? preferredWidth
         autoHide = try c.decodeIfPresent(Bool.self, forKey: .autoHide) ?? autoHide
         enhanceContrast = try c.decodeIfPresent(Bool.self, forKey: .enhanceContrast) ?? enhanceContrast
+        contrastStrength = try c.decodeIfPresent(Double.self, forKey: .contrastStrength) ?? contrastStrength
+        sharpnessStrength = try c.decodeIfPresent(Double.self, forKey: .sharpnessStrength) ?? sharpnessStrength
         idleDetection = try c.decodeIfPresent(Bool.self, forKey: .idleDetection) ?? idleDetection
         idleSeconds = try c.decodeIfPresent(Double.self, forKey: .idleSeconds) ?? idleSeconds
         changeDetection = try c.decodeIfPresent(Bool.self, forKey: .changeDetection) ?? changeDetection
@@ -179,7 +184,9 @@ public struct Preferences: Codable, Equatable, Sendable {
         idleSeconds = idleSeconds.isFinite ? min(600, max(5, idleSeconds)) : 20
         changeSeconds = changeSeconds.isFinite ? min(600, max(1, changeSeconds)) : 10
         detectionCommandTimeout = detectionCommandTimeout.isFinite ? min(300, max(1, detectionCommandTimeout)) : 15
-        hoverBlur = hoverBlur.isFinite ? min(1, max(0, hoverBlur)) : 0.35
+        hoverBlur = hoverBlur.isFinite ? min(1, max(0, hoverBlur)) : 1
+        contrastStrength = contrastStrength.isFinite ? min(1, max(0, contrastStrength)) : 0.5
+        sharpnessStrength = sharpnessStrength.isFinite ? min(1, max(0, sharpnessStrength)) : 0.5
         panelOpacity = panelOpacity.isFinite ? min(1, max(0.35, panelOpacity)) : 1
         cornerRadius = cornerRadius.isFinite ? min(30, max(0, cornerRadius)) : 14
     }

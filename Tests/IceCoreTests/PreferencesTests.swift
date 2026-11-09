@@ -53,4 +53,31 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.hoverBlur, 1)
         XCTAssertEqual(preferences.panelOpacity, 0.35)
     }
+
+    func testEnhancementMigrationPreservesExistingAppearance() throws {
+        let data = Data(#"{"enhanceContrast":true,"hoverBlur":0.35,"panelOpacity":0.73}"#.utf8)
+        let legacy = try JSONDecoder().decode(Preferences.self, from: data)
+        XCTAssertTrue(legacy.enhanceContrast)
+        XCTAssertEqual(legacy.contrastStrength, 0.5)
+        XCTAssertEqual(legacy.sharpnessStrength, 0.5)
+        XCTAssertEqual(legacy.hoverBlur, 0.35)
+        XCTAssertEqual(legacy.panelOpacity, 0.73)
+        XCTAssertEqual(Preferences().hoverBlur, 1)
+        var edited = legacy
+        edited.contrastStrength = 0.37
+        edited.sharpnessStrength = 0.81
+        XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(edited)), edited)
+        edited.contrastStrength = -.infinity
+        edited.sharpnessStrength = 2
+        edited.hoverBlur = .nan
+        edited.normalize()
+        XCTAssertEqual(edited.contrastStrength, 0.5)
+        XCTAssertEqual(edited.sharpnessStrength, 1)
+        XCTAssertEqual(edited.hoverBlur, 1)
+        edited.contrastStrength = -1
+        edited.sharpnessStrength = 0
+        edited.normalize()
+        XCTAssertEqual(edited.contrastStrength, 0)
+        XCTAssertEqual(edited.sharpnessStrength, 0)
+    }
 }

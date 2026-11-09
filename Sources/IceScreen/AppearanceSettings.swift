@@ -44,19 +44,27 @@ struct AppearanceSettings: View {
                                        range: 0...30, step: 1, defaultValue: defaults.cornerRadius,
                                        format: { "\(Int($0.rounded())) pt" })
                     DefaultValueSlider(title: "透明度", value: $store.value.panelOpacity,
-                                       range: 0.35...1, step: 0.05, defaultValue: defaults.panelOpacity,
+                                       range: 0.35...1, step: 0.01, defaultValue: defaults.panelOpacity,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                 }
                 Section {
                     Toggle("增强对比度和锐度", isOn: $store.value.enhanceContrast)
+                    DefaultValueSlider(title: "对比度强度", value: $store.value.contrastStrength,
+                                       range: 0...1, step: 0.01, defaultValue: defaults.contrastStrength,
+                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                        .disabled(!store.value.enhanceContrast)
+                    DefaultValueSlider(title: "锐化强度", value: $store.value.sharpnessStrength,
+                                       range: 0...1, step: 0.01, defaultValue: defaults.sharpnessStrength,
+                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                        .disabled(!store.value.enhanceContrast)
                 } header: { Text("画面清晰度") } footer: {
-                    Text("观察预览中的小字、细线和渐变，使用「对比原图」查看增强前后的差异。")
+                    Text("两项强度均可按 1% 调整。0% 保留原始效果，使用「对比原图」查看增强前后的差异。")
                 }
                 Section {
                     Toggle("鼠标移入时自动隐藏", isOn: $store.value.autoHide)
                     Toggle("悬停时控件周围变暗", isOn: $store.value.dimOnHover)
                     DefaultValueSlider(title: "边缘效果强度", value: $store.value.hoverBlur,
-                                       range: 0...1, step: 0.05, defaultValue: defaults.hoverBlur,
+                                       range: 0...1, step: 0.01, defaultValue: defaults.hoverBlur,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                         .disabled(!store.value.dimOnHover)
                     Toggle("显示操作提示", isOn: $store.value.showHoverHints)
@@ -87,14 +95,28 @@ struct DefaultValueSlider: View {
     let defaultValue: Double
     let format: (Double) -> String
 
+    private var sliderValue: Binding<Double> {
+        Binding(get: { value }, set: { proposed in
+            let rounded = range.lowerBound + ((proposed - range.lowerBound) / step).rounded() * step
+            value = min(range.upperBound, max(range.lowerBound, rounded))
+        })
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Text(title).frame(width: 84, height: 22, alignment: .leading)
             VStack(spacing: 0) {
-                Slider(value: $value, in: range, step: step) { Text(title) }
+                Slider(value: sliderValue, in: range) { Text(title) }
                     .labelsHidden()
                     .frame(height: 22)
                     .accessibilityValue(format(value))
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: sliderValue.wrappedValue = value + step
+                        case .decrement: sliderValue.wrappedValue = value - step
+                        @unknown default: break
+                        }
+                    }
                 GeometryReader { geometry in
                     let fraction = (defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound)
                     let center = 10 + (geometry.size.width - 20) * fraction

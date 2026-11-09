@@ -30,21 +30,28 @@ struct SettingsView: View {
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
         } detail: {
-            Group {
-                switch page {
-                case .general: general
-                case .floatingWindows: floatingWindows
-                case .appearance: AppearanceSettings(store: store)
-                case .detection: detection
-                case .keyboard: keyboard
-                case .about: about
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                Group {
+                    switch page {
+                    case .general: general
+                    case .floatingWindows: floatingWindows
+                    case .appearance: AppearanceSettings(store: store)
+                    case .detection: detection
+                    case .keyboard: keyboard
+                    case .about: about
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.identity)
+                .animation(nil, value: page)
             }
             .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle(page.title)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minHeight: 540, idealHeight: 640)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onReceive(model.$screenPermission.removeDuplicates()) { screenPermission = $0 }
         .onReceive(model.$accessibilityPermission.removeDuplicates()) { accessibilityPermission = $0 }
         .onReceive(model.$hotkeysActive.removeDuplicates()) { hotkeysActive = $0 }

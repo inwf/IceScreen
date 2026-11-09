@@ -4,9 +4,14 @@ import SwiftUI
 import IceCore
 
 struct SettingsView: View {
-    @ObservedObject var model: ApplicationModel
+    let model: ApplicationModel
     @ObservedObject var store: SettingsStore
     @State private var selection: SettingsPage? = .general
+    @State private var screenPermission = false
+    @State private var accessibilityPermission = false
+    @State private var hotkeysActive = false
+    @State private var loginEnabled = false
+    @State private var displayedError: String?
     private var page: SettingsPage { selection ?? .general }
 
     var body: some View {
@@ -20,7 +25,7 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
         } detail: {
             Group {
                 switch page {
@@ -32,14 +37,21 @@ struct SettingsView: View {
                 case .about: about
                 }
             }
-            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle(page.title)
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 740, idealWidth: 820, minHeight: 540, idealHeight: 640)
-        .alert("IceScreen", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+        .frame(minHeight: 540, idealHeight: 640)
+        .onReceive(model.$screenPermission.removeDuplicates()) { screenPermission = $0 }
+        .onReceive(model.$accessibilityPermission.removeDuplicates()) { accessibilityPermission = $0 }
+        .onReceive(model.$hotkeysActive.removeDuplicates()) { hotkeysActive = $0 }
+        .onReceive(model.$loginEnabled.removeDuplicates()) { loginEnabled = $0 }
+        .onReceive(model.$error.removeDuplicates()) { displayedError = $0 }
+        .alert("IceScreen", isPresented: Binding(get: { displayedError != nil }, set: {
+            if !$0 { displayedError = nil; model.error = nil }
+        })) {
             Button("好", role: .cancel) { model.error = nil }
-        } message: { Text(model.error ?? "") }
+        } message: { Text(displayedError ?? "") }
     }
 
     private var general: some View {
@@ -82,15 +94,15 @@ struct SettingsView: View {
                 Text("轻按隐藏或恢复浮窗，双击切换自动隐藏；按住并双击来源窗口可快速捕获区域。")
             }
             Section("启动") {
-                Toggle("登录时启动 IceScreen", isOn: Binding(get: { model.loginEnabled }, set: model.setLaunchAtLogin))
+                Toggle("登录时启动 IceScreen", isOn: Binding(get: { loginEnabled }, set: model.setLaunchAtLogin))
                 Toggle("显示菜单栏图标", isOn: $store.value.showMenuBarIcon)
                 Text("隐藏图标后仍会继续运行。再次打开 IceScreen 可以回到设置。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("系统权限") {
-                permissionRow("屏幕录制", granted: model.screenPermission, action: model.requestScreenPermission)
-                permissionRow("辅助功能", granted: model.accessibilityPermission, action: model.requestAccessibility)
-                if !model.hotkeysActive && model.accessibilityPermission {
+                permissionRow("屏幕录制", granted: screenPermission, action: model.requestScreenPermission)
+                permissionRow("辅助功能", granted: accessibilityPermission, action: model.requestAccessibility)
+                if !hotkeysActive && accessibilityPermission {
                     Label("全局按键尚未启用，请检查系统的输入监控权限。", systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.secondary)
                 }

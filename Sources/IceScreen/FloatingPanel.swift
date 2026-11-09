@@ -41,7 +41,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private var sourcePaused = false
     private var preserveOnSourceFocus = false
     private var clickToFocus = false
-    private var clickTask: Task<Void, Never>?
     private var triggerLabel = "fn"
     private var interactionDepth = 0
     private var detection = ContentDetection()
@@ -102,6 +101,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         panel.contentView = surface
         panel.delegate = self
         surface.owner = self
+        surface.onContentClick = { [weak self] in self?.clicked() }
         applyPreferences(preferences)
         surface.frameView.enhanced = enhanced
         pipeline.output.mailbox.deliver = { [weak surface] buffer in surface?.frameView.display(buffer) }
@@ -217,18 +217,11 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func clicked() {
-        guard clickToFocus else { return }
-        clickTask?.cancel()
-        clickTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(NSEvent.doubleClickInterval)) } catch { return }
-            self?.focusSource()
-        }
+        guard clickToFocus, !closed else { return }
+        focusSource()
     }
 
-    func cancelPendingClick() { clickTask?.cancel(); clickTask = nil }
-
     func doubleClicked(reset: Bool) {
-        clickTask?.cancel()
         if reset { resetZoom() }
         else if onFocus?(source) == true { close() }
     }
@@ -348,7 +341,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         guard !closed else { return }
         closed = true
         resizeTask?.cancel()
-        clickTask?.cancel()
         pipeline.close()
         surface.frameView.releaseFrame()
         panel.orderOut(nil)
@@ -393,6 +385,24 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         return menu
     }
 
+    func detectionMenu() -> NSMenu {
+        let menu = NSMenu()
+        let heading = NSMenuItem(title: "内容检测", action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        menu.addItem(heading)
+        for (title, action, enabled) in [
+            ("空闲提醒 · D", #selector(toggleIdle), idleDetection),
+            ("变化提醒 · C", #selector(toggleChangeDetection), changeDetection),
+            ("细微变化 · S", #selector(toggleSensitiveDetection), sensitiveDetection)
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.state = enabled ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
     func makeMenu() -> NSMenu {
         let menu = NSMenu()
         func add(_ title: String, _ action: Selector, checked: Bool? = nil) {
@@ -425,6 +435,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 @MainActor
 final class PanelSurface: NSView {
     override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
     let frameView = FrameView(frame: .zero)
     private let input = PanelInput(frame: .zero)
     private let statusDot = PanelButton()
@@ -433,6 +444,7 @@ final class PanelSurface: NSView {
     private let focusButton = PanelButton()
     private let previewButton = PanelButton()
     private let controls = PanelControlsView()
+    private var buttonHosts: [PanelButton: PanelGlassControl] = [:]
     private var controlsContainer: NSView!
     private let hint = PanelHintView()
     private let dim = PanelDimView()
@@ -442,6 +454,7 @@ final class PanelSurface: NSView {
     private var tracking: NSTrackingArea?
     private var hovered = false
     private var detectionEnabled = false
+    var onContentClick: (() -> Void)? { didSet { input.onClick = onContentClick } }
     var showHints = true { didSet { updateHint() } }
     var triggerLabel = "fn" { didSet { updateHint() } }
     var clickToFocus = true { didSet { updateHint() } }
@@ -472,7 +485,7 @@ final class PanelSurface: NSView {
         #endif
         addSubview(controlsContainer)
         for (button, symbol, label, action) in [
-            (statusDot, "circle.fill", "切换空闲检测", #selector(toggleIdle)),
+            (statusDot, "waveform.path", "内容检测", #selector(showDetectionMenu)),
             (menuButton, "ellipsis", "浮窗设置", #selector(showMenu)),
             (closeButton, "xmark", "关闭浮窗", #selector(closePanel)),
             (focusButton, "macwindow", "定位来源窗口", #selector(focusSource)),
@@ -480,16 +493,18 @@ final class PanelSurface: NSView {
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
             button.imagePosition = .imageOnly
-            button.bezelStyle = .rounded
-            button.isBordered = true
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *) { button.bezelStyle = .glass }
-            #endif
+            button.setButtonType(.momentaryChange)
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 12, weight: .medium)
             button.contentTintColor = .labelColor
             button.setAccessibilityLabel(label)
             button.target = self; button.action = action; button.toolTip = label
-            controls.addSubview(button)
+            let host = PanelGlassControl(button: button)
+            buttonHosts[button] = host
+            controls.addSubview(host)
         }
+        statusDot.title = "检测"
+        statusDot.imagePosition = .imageLeading
         setHovered(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -509,32 +524,35 @@ final class PanelSurface: NSView {
         dim.frame = bounds
         controlsContainer.frame = bounds
         controls.frame = bounds
-        let compact = bounds.width < 150 || bounds.height < 100
-        closeButton.frame = CGRect(x: 8, y: 8, width: 32, height: 32)
-        statusDot.frame = CGRect(x: bounds.width - 40, y: 8, width: 32, height: 32)
+        let compact = bounds.width < 180 || bounds.height < 100
+        place(closeButton, CGRect(x: 8, y: 8, width: 32, height: 32), hidden: !hovered)
+        place(statusDot, CGRect(x: bounds.width - 96, y: 8, width: 88, height: 32),
+              hidden: compact || (!hovered && !detectionEnabled))
         if compact {
-            menuButton.frame = statusDot.frame
+            place(menuButton, CGRect(x: bounds.width - 40, y: 8, width: 32, height: 32), hidden: !hovered)
         } else {
-            let count = previewEnabled ? 3 : 2
-            let left = (bounds.width - CGFloat(count * 40 - 8)) / 2
-            focusButton.frame = CGRect(x: left, y: bounds.height - 40, width: 32, height: 32)
-            previewButton.frame = CGRect(x: left + 40, y: bounds.height - 40, width: 32, height: 32)
-            menuButton.frame = CGRect(x: left + CGFloat((count - 1) * 40), y: bounds.height - 40, width: 32, height: 32)
+            place(menuButton, CGRect(x: bounds.width - 40, y: bounds.height - 40, width: 32, height: 32), hidden: !hovered)
         }
-        closeButton.isHidden = !hovered
-        menuButton.isHidden = !hovered
-        focusButton.isHidden = !hovered || compact
-        previewButton.isHidden = !hovered || compact || !previewEnabled
-        statusDot.isHidden = compact || (!hovered && !detectionEnabled)
+        place(focusButton, CGRect(x: 8, y: bounds.height - 40, width: 32, height: 32), hidden: !hovered || compact)
+        place(previewButton, CGRect(x: bounds.width - 80, y: bounds.height - 40, width: 32, height: 32),
+              hidden: !hovered || compact || !previewEnabled)
         let hintWidth = min(300, max(0, bounds.width - 32))
         hint.frame = CGRect(x: (bounds.width - hintWidth) / 2, y: (bounds.height - 64) / 2, width: hintWidth, height: 64)
         hint.isHidden = bounds.width < 210 || bounds.height < 170 || hint.text.isEmpty
     }
+    private func place(_ button: PanelButton, _ rect: CGRect, hidden: Bool) {
+        guard let host = buttonHosts[button] else { return }
+        host.frame = rect
+        host.isHidden = hidden
+        host.needsLayout = true
+    }
     func update(title: String, status: String, idle: Bool, detection: Bool, message: String?) {
         input.toolTip = title + " · " + status
         detectionEnabled = detection
-        statusDot.contentTintColor = idle ? .systemOrange : (detection ? .systemMint : .gray)
-        statusDot.toolTip = status + " · 点击切换空闲检测"
+        statusDot.title = idle ? "已空闲" : (detection ? "检测中" : "检测")
+        statusDot.contentTintColor = idle ? .systemOrange : .labelColor
+        statusDot.toolTip = "内容检测：" + (detection ? (idle ? "内容已停止变化" : "正在监测") : "尚未启用") + "。点击选择空闲提醒、变化提醒或细微变化。"
+        statusDot.setAccessibilityValue(statusDot.title)
         statusMessage = message ?? (idle ? "内容暂时没有变化" : nil)
         updateHint()
         needsLayout = true
@@ -571,27 +589,78 @@ final class PanelSurface: NSView {
         let local = convert(point, from: superview)
         guard !isHidden, bounds.contains(local) else { return nil }
         layoutSubtreeIfNeeded()
-        let controlPoint = controls.convert(local, from: self)
         for button in [closeButton, statusDot, focusButton, previewButton, menuButton]
-            where !button.isHidden && button.frame.contains(controlPoint) {
+            where buttonHosts[button]?.isHidden == false {
+            let buttonPoint = button.convert(local, from: self)
+            guard button.bounds.contains(buttonPoint) else { continue }
             return button
         }
         return input
     }
-    @objc private func toggleIdle() { owner?.toggleIdle() }
+    @objc private func showDetectionMenu() {
+        owner?.beginInteraction()
+        defer { owner?.endInteraction() }
+        let rect = statusDot.convert(statusDot.bounds, to: self)
+        owner?.detectionMenu().popUp(positioning: nil, at: CGPoint(x: rect.minX, y: rect.maxY + 4), in: self)
+    }
     @objc private func closePanel() { owner?.close() }
     @objc private func focusSource() { owner?.focusSource() }
     @objc private func showPreview() { owner?.showPreview() }
     @objc private func showMenu() {
         owner?.beginInteraction()
         defer { owner?.endInteraction() }
-        owner?.makeMenu().popUp(positioning: nil, at: CGPoint(x: menuButton.frame.minX, y: menuButton.frame.maxY + 4), in: self)
+        let rect = menuButton.convert(menuButton.bounds, to: self)
+        owner?.makeMenu().popUp(positioning: nil, at: CGPoint(x: rect.minX, y: rect.maxY + 4), in: self)
     }
 }
 
 final class PanelButton: NSButton {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+final class PanelGlassControl: NSView {
+    let button: PanelButton
+    private let effect: NSView
+
+    init(button: PanelButton) {
+        self.button = button
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.style = .regular
+            glass.cornerRadius = 16
+            glass.contentView = button
+            effect = glass
+        } else {
+            effect = Self.legacyEffect(button)
+        }
+        #else
+        effect = Self.legacyEffect(button)
+        #endif
+        super.init(frame: .zero)
+        addSubview(effect)
+    }
+
+    private static func legacyEffect(_ button: PanelButton) -> NSView {
+        let material = NSVisualEffectView()
+        material.material = .hudWindow
+        material.blendingMode = .withinWindow
+        material.state = .active
+        material.wantsLayer = true
+        material.layer?.cornerRadius = 16
+        material.layer?.masksToBounds = true
+        material.addSubview(button)
+        return material
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    override func layout() {
+        super.layout()
+        effect.frame = bounds
+        button.frame = effect.bounds
+    }
 }
 
 final class PanelControlsView: NSView {
@@ -671,7 +740,9 @@ final class PanelDimView: NSView {
 @MainActor
 final class PanelInput: NSView {
     override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
     weak var owner: CaptureSession?
+    var onClick: (() -> Void)?
     private var start: CGPoint?
     private var moving = false
     private var clickGesture = PanelClickGesture()
@@ -686,7 +757,6 @@ final class PanelInput: NSView {
         start = nil; moving = false; selection = nil
         dragEvent = event
         clickGesture.begin(at: event.locationInWindow)
-        owner?.cancelPendingClick()
         doubleClick = event.clickCount == 2
         if event.clickCount == 2 {
             owner?.doubleClicked(reset: event.modifierFlags.contains(.command))
@@ -718,7 +788,7 @@ final class PanelInput: NSView {
             start = nil; moving = false; dragEvent = nil; selection = nil; needsDisplay = true
             if interacting { owner?.endInteraction(); interacting = false }
         }
-        if clickGesture.end(at: event.locationInWindow), !doubleClick, start == nil { owner?.clicked() }
+        if clickGesture.end(at: event.locationInWindow), !doubleClick, start == nil { onClick?() }
         guard let selection, selection.width >= 6, selection.height >= 6, let owner else { return }
         owner.setViewport(owner.viewport.selecting(CGRect(x: selection.minX / bounds.width,
             y: selection.minY / bounds.height, width: selection.width / bounds.width, height: selection.height / bounds.height)))

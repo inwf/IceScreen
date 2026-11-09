@@ -87,20 +87,49 @@ enum PanelEventChecks {
         precondition(hit(24, 24) is PanelInput, "Hidden controls must leave content interactive.")
         surface.setHovered(true)
         checkButton(24, 24, "closePanel")
-        checkButton(336, 24, "toggleIdle")
-        checkButton(140, 216, "focusSource")
-        checkButton(180, 216, "showPreview")
-        checkButton(220, 216, "showMenu")
+        checkButton(308, 24, "showDetectionMenu")
+        checkButton(24, 216, "focusSource")
+        checkButton(296, 216, "showPreview")
+        checkButton(336, 216, "showMenu")
         guard let content = hit(180, 120) as? PanelInput else { fatalError("The hint must not intercept content clicks.") }
         precondition(content.acceptsFirstMouse(for: nil), "Content must accept the first click.")
+        precondition(!content.mouseDownCanMoveWindow, "Content must own mouse-down and mouse-up delivery.")
+        let target = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 240, height: 120),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        target.isReleasedWhenClosed = false
+        defer { target.close() }
+        surface.onContentClick = { target.makeKeyAndOrderFront(nil) }
+        let location = surface.convert(NSPoint(x: 180, y: 120), to: nil)
+        func event(_ type: NSEvent.EventType, clickCount: Int = 1) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                               timestamp: ProcessInfo.processInfo.systemUptime,
+                               windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+                               clickCount: clickCount, pressure: 1)!
+        }
+        panel.sendEvent(event(.leftMouseDown))
+        precondition(!target.isVisible, "Pressing before release must preserve the ability to drag.")
+        panel.sendEvent(event(.leftMouseUp))
+        precondition(target.isVisible, "A content click must focus its destination before mouse-up returns.")
+        target.orderOut(nil)
+        panel.sendEvent(event(.leftMouseDown, clickCount: 2))
+        panel.sendEvent(event(.leftMouseUp, clickCount: 2))
+        precondition(!target.isVisible, "The second click must not duplicate the single-click action.")
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            func glassCount(_ view: NSView) -> Int {
+                (view is NSGlassEffectView ? 1 : 0) + view.subviews.reduce(0) { $0 + glassCount($1) }
+            }
+            precondition(glassCount(surface) == 5, "All floating controls must have native Liquid Glass material.")
+        }
+        #endif
         precondition(hit(-1, 120) == nil, "Points outside the surface must not receive input.")
         surface.isHidden = true
         precondition(hit(180, 120) == nil, "Hidden surfaces must not receive input.")
         surface.isHidden = false
 
         surface.previewEnabled = false
-        checkButton(160, 216, "focusSource")
-        checkButton(200, 216, "showMenu")
+        checkButton(24, 216, "focusSource")
+        checkButton(336, 216, "showMenu")
         panel.setContentSize(NSSize(width: 120, height: 80))
         surface.layoutSubtreeIfNeeded()
         checkButton(24, 24, "closePanel")

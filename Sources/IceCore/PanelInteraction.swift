@@ -44,7 +44,7 @@ public struct ModifierTapSequence: Sendable {
 }
 
 public enum HoverAction: Equatable, Sendable {
-    case frameRate, idleDetection, changeDetection, sensitiveDetection, zoomIn, zoomOut, close
+    case frameRate, idleDetection, changeDetection, sensitiveDetection, zoomIn, zoomOut, resetZoom, close
 
     public static func resolve(keyCode: UInt16, repeated: Bool) -> HoverAction? {
         switch keyCode {
@@ -54,6 +54,7 @@ public enum HoverAction: Equatable, Sendable {
         case 1: return repeated ? nil : .sensitiveDetection
         case 24, 69: return .zoomIn
         case 27, 78: return .zoomOut
+        case 29, 82: return repeated ? nil : .resetZoom
         case 51, 117: return repeated ? nil : .close
         default: return nil
         }

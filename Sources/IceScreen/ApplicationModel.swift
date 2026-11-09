@@ -352,6 +352,7 @@ final class ApplicationModel: ObservableObject {
             case .sensitiveDetection: session.toggleSensitiveDetection()
             case .zoomIn: session.zoomIn()
             case .zoomOut: session.zoomOut()
+            case .resetZoom: session.resetZoom()
             case .close: session.close()
             }
         }

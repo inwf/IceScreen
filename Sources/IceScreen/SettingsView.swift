@@ -229,6 +229,7 @@ struct SettingsView: View {
                     instruction("单击", store.value.clickToFocus ? "定位来源窗口并保留浮窗" : "单击定位已关闭，可在「浮窗」中开启")
                     instruction("⌘ + 拖动", "框选缩放区域")
                     instruction("⌘ + 双击", "恢复完整画面")
+                    instruction("0", "恢复完整画面")
                     instruction("滚动 / ⌘ + 滚动", "平移 / 缩放")
                     instruction("捏合 / = / −", "缩放画面")
                 }

@@ -20,7 +20,15 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var hidden: Bool { visibility.manuallyHidden }
     var autoHidden: Bool { visibility.automaticallyHidden }
     @Published private(set) var idle = false
-    @Published var autoHide: Bool { didSet { pointerMoved(to: NSEvent.mouseLocation); updateStatus() } }
+    @Published var autoHide: Bool {
+        didSet {
+            pointerMoved(to: NSEvent.mouseLocation)
+            updateStatus()
+            if oldValue != autoHide {
+                hint.show(autoHide ? "自动隐藏已开启" : "自动隐藏已关闭", near: panel.frame)
+            }
+        }
+    }
     @Published var idleDetection: Bool { didSet { configureDetection() } }
     @Published var changeDetection: Bool { didSet { configureDetection() } }
     @Published var sensitiveDetection: Bool { didSet { configureDetection() } }
@@ -52,6 +60,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private var detection = ContentDetection()
     private var detectionSuspended = true
     private var detectedChangeUntil: TimeInterval = 0
+    private let hint = PanelHintPresenter()
     var currentSourceSize: CGSize { sourceSize }
 
     var title: String { source.title?.isEmpty == false ? source.title! : appName }
@@ -393,6 +402,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         focusTask?.cancel()
         guard !closed else { return }
         closed = true
+        hint.close()
         resizeTask?.cancel()
         pipeline.close()
         surface.frameView.releaseFrame()

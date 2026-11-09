@@ -117,22 +117,24 @@ enum PanelEventChecks {
         for hovered in [false, true] {
             surface.setHovered(hovered)
             for point in [NSPoint(x: 70, y: 58), NSPoint(x: 180, y: 120), NSPoint(x: 290, y: 184)] {
+                NSApp.postEvent(event(.leftMouseUp, at: point), atStart: true)
                 NSApp.sendEvent(event(.leftMouseDown, at: point))
-                precondition(!target.isVisible, "Pressing before release must preserve the ability to drag.")
-                NSApp.sendEvent(event(.leftMouseUp, at: point))
-                precondition(target.isVisible, "A content click must focus its destination before mouse-up returns.")
+                precondition(target.isVisible, "A content click must focus its destination when tracking completes.")
                 target.orderOut(nil)
             }
         }
+        NSApp.postEvent(event(.leftMouseUp, clickCount: 2), atStart: true)
         NSApp.sendEvent(event(.leftMouseDown, clickCount: 2))
-        NSApp.sendEvent(event(.leftMouseUp, clickCount: 2))
         precondition(!target.isVisible, "The second click must not duplicate the single-click action.")
+        NSApp.postEvent(event(.leftMouseUp, at: NSPoint(x: 240, y: 170), modifiers: [.command]), atStart: true)
+        NSApp.postEvent(event(.leftMouseDragged, at: NSPoint(x: 240, y: 170), modifiers: [.command]), atStart: true)
         NSApp.sendEvent(event(.leftMouseDown, modifiers: [.command]))
-        NSApp.sendEvent(event(.leftMouseDragged, at: NSPoint(x: 240, y: 170), modifiers: [.command]))
-        NSApp.sendEvent(event(.leftMouseUp, at: NSPoint(x: 240, y: 170), modifiers: [.command]))
         precondition(!target.isVisible, "Region selection must not focus the destination.")
+        let cancel = Timer(timeInterval: 0.01, repeats: false) { _ in
+            MainActor.assumeIsolated { panel.orderOut(nil) }
+        }
+        RunLoop.main.add(cancel, forMode: .eventTracking)
         NSApp.sendEvent(event(.leftMouseDown))
-        panel.orderOut(nil)
         panel.orderFrontRegardless()
         NSApp.sendEvent(event(.leftMouseUp))
         precondition(!target.isVisible, "Hiding a panel must cancel the pending click.")

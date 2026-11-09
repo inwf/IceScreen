@@ -1,10 +1,12 @@
 #if os(macOS)
 import AppKit
 import ScreenCaptureKit
+import OSLog
 import IceCore
 
 @MainActor
 final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDelegate {
+    private static let interactionLog = Logger(subsystem: "org.icescreen.app", category: "PanelInteraction")
     let id = UUID()
     let source: SCWindow
     let pipeline: CapturePipeline
@@ -221,6 +223,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func clicked() {
+        Self.interactionLog.debug("Content click: enabled=\(self.clickToFocus), closed=\(self.closed)")
         guard clickToFocus, !closed else { return }
         focusSource()
     }
@@ -253,6 +256,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     @objc func focusSource() {
         preserveOnSourceFocus = true
         if onFocus?(source) != true { preserveOnSourceFocus = false }
+        Self.interactionLog.debug("Source activation accepted=\(self.preserveOnSourceFocus)")
     }
     @objc func showPreview() { onPreview?() }
     @objc func resetZoom() { setViewport(.full) }
@@ -594,6 +598,7 @@ final class PanelSurface: NSView {
     func target(atWindowPoint point: NSPoint) -> NSView? {
         target(at: convert(point, from: nil))
     }
+    func cancelGesture() { input.cancelGesture() }
     private func target(at local: NSPoint) -> NSView? {
         guard !isHidden, bounds.contains(local) else { return nil }
         layoutSubtreeIfNeeded()
@@ -744,7 +749,7 @@ final class PanelDimView: NSView {
 }
 
 @MainActor
-final class PanelInput: NSView {
+final class PanelInput: NSControl {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
     weak var owner: CaptureSession?
@@ -758,8 +763,11 @@ final class PanelInput: NSView {
     private var selection: CGRect?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+    override var needsPanelToBecomeKey: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
         cancelGesture()
         dragEvent = event
         clickGesture.begin(at: event.locationInWindow)
@@ -771,6 +779,26 @@ final class PanelInput: NSView {
         } else if event.modifierFlags.contains(.command) {
             start = convert(event.locationInWindow, from: nil)
         } else { moving = true }
+        guard interacting else { return }
+        defer { cancelGesture() }
+        // 在非激活面板内跟踪完整手势；移动和框选不会触发单击。
+        window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: 0.1, mode: .eventTracking) { next, stop in
+            guard self.interacting, window.isVisible, !window.ignoresMouseEvents else {
+                stop.pointee = true
+                return
+            }
+            guard let next else {
+                if NSEvent.pressedMouseButtons & 1 == 0 { stop.pointee = true }
+                return
+            }
+            if next.type == .leftMouseUp {
+                self.mouseUp(with: next)
+                stop.pointee = true
+            } else {
+                self.mouseDragged(with: next)
+                if !self.interacting { stop.pointee = true }
+            }
+        }
     }
     override func mouseDragged(with event: NSEvent) {
         guard clickGesture.move(to: event.locationInWindow) else { return }

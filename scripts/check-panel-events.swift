@@ -1,5 +1,6 @@
 import AppKit
 import CoreVideo
+import QuartzCore
 
 @main
 enum PanelEventChecks {
@@ -34,7 +35,64 @@ enum PanelEventChecks {
                      "Typing outside a panel must remain unaffected.")
         checkSurface(in: lower)
         checkCaptureDetection()
+        checkPreviewTransition(in: screen.visibleFrame)
         print("Passed 5 native NSPanel hit-testing checks.")
+    }
+
+    @MainActor private static func checkPreviewTransition(in screen: NSRect) {
+        let rect = NSRect(x: screen.midX - 160, y: screen.midY - 100, width: 320, height: 200)
+        var buffer: CVPixelBuffer?
+        precondition(CVPixelBufferCreate(kCFAllocatorDefault, 320, 200, kCVPixelFormatType_32BGRA,
+                                        nil, &buffer) == kCVReturnSuccess)
+        let pixels = buffer!
+        CVPixelBufferLockBaseAddress(pixels, [])
+        memset(CVPixelBufferGetBaseAddress(pixels)!, 255, CVPixelBufferGetBytesPerRow(pixels) * 200)
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+        func wait(_ condition: () -> Bool) {
+            let deadline = Date().addingTimeInterval(3)
+            while !condition() {
+                precondition(Date() < deadline, "Timed out waiting for the real preview renderer or transition.")
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+        }
+
+        let opening = PreviewPresentation(contentRect: rect, reduceMotion: false)
+        defer { opening.dispose() }
+        opening.start()
+        precondition(!opening.isRevealed && opening.frameView.layer!.opacity == 0,
+                     "The preview must remain transparent until its first rendered frame.")
+        opening.frameView.display(pixels)
+        wait { opening.isRevealed }
+        precondition(!opening.window.isKeyWindow && !opening.window.canBecomeKey,
+                     "Preview animation must not acquire keyboard focus.")
+        precondition(opening.frameView.layer!.animation(forKey: "preview.spring") is CASpringAnimation,
+                     "The rendered preview must start a native spring transition.")
+        let fixedFrame = opening.window.frame
+        settle()
+        precondition(opening.window.frame == fixedFrame && opening.frameView.bounds.size == rect.size,
+                     "Preview animation must preserve window and drawable dimensions.")
+        var dismissed = false
+        opening.dismiss(animated: true) { dismissed = true }
+        precondition(opening.window.ignoresMouseEvents, "A fading preview must immediately release mouse input.")
+
+        let replacement = PreviewPresentation(contentRect: rect, reduceMotion: true)
+        defer { replacement.dispose() }
+        replacement.start()
+        replacement.frameView.display(pixels)
+        wait { replacement.isRevealed && dismissed }
+        precondition(!opening.window.isVisible && replacement.window.isVisible,
+                     "Completing an old dismissal must not close the new preview.")
+        precondition(replacement.frameView.layer!.animation(forKey: "preview.spring") == nil,
+                     "Reduced motion must show the preview without a spring transform.")
+
+        let cancelled = PreviewPresentation(contentRect: rect)
+        cancelled.start()
+        cancelled.dismiss(animated: true) {}
+        cancelled.frameView.display(pixels)
+        settle()
+        precondition(!cancelled.window.isVisible && !cancelled.isRevealed,
+                     "Cancelling before the first frame must not reveal a late preview.")
+        print("Passed native preview first-frame, spring, cancellation, replacement, and reduced-motion checks.")
     }
 
     @MainActor private static func checkCaptureDetection() {

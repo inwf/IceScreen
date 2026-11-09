@@ -68,7 +68,6 @@ final class PanelChromeState: ObservableObject {
 
 struct PanelChrome: View {
     @ObservedObject var state: PanelChromeState
-    @State private var hoveredControl: PanelAction?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var detectionColor: Color { state.value.changeDetection ? .blue : .green }
@@ -77,15 +76,24 @@ struct PanelChrome: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 hints(in: geometry.size).allowsHitTesting(false)
-                ForEach(state.regions(in: geometry.size)) { region in
-                    control(region.id)
-                        .frame(width: region.frame.width, height: region.frame.height)
-                        .position(x: region.frame.midX, y: region.frame.midY)
+                if #available(macOS 26.0, *) {
+                    GlassEffectContainer(spacing: 0) { controls(in: geometry.size) }
+                } else {
+                    controls(in: geometry.size)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }
         .environment(\.controlActiveState, .key)
-        .environment(\.colorScheme, .dark)
+    }
+
+    private func controls(in size: CGSize) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(state.regions(in: size)) { region in
+                control(region.id)
+                    .frame(width: region.frame.width, height: region.frame.height)
+                    .position(x: region.frame.midX, y: region.frame.midY)
+            }
+        }.frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
     @ViewBuilder private func hints(in size: CGSize) -> some View {
@@ -125,52 +133,68 @@ struct PanelChrome: View {
 
     @ViewBuilder private func control(_ action: PanelAction) -> some View {
         if action == .resize {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 11, weight: .heavy))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(5)
-                .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 5))
-                .allowsHitTesting(false)
-        } else {
-            Button { state.perform?(action) } label: {
-                label(action).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+            if #available(macOS 26.0, *) {
+                resizeLabel.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 5))
+                    .allowsHitTesting(false)
+            } else {
+                resizeLabel.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                    .allowsHitTesting(false)
             }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .help(action == .detection ? state.detectionHelp : action.label)
-            .accessibilityLabel(action.label)
-            .accessibilityValue(action == .detection ? state.detectionTitle : "")
-            .accessibilityIdentifier("panel.\(action.rawValue)")
-            .onHover { hoveredControl = $0 ? action : nil }
+        } else if #available(macOS 26.0, *) {
+            button(action)
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
+        } else {
+            button(action).buttonStyle(.bordered)
+        }
+    }
+
+    private var resizeLabel: some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 11, weight: .heavy))
+            .foregroundStyle(.primary)
+            .frame(width: 21, height: 21)
+    }
+
+    private func button(_ action: PanelAction) -> some View {
+        Button { state.perform?(action) } label: {
+            label(action).contentShape(Rectangle())
+        }
+        .controlSize(.mini)
+        .tint(tint(for: action))
+        .focusable(false)
+        .help(action == .detection ? state.detectionHelp : action.label)
+        .accessibilityLabel(action.label)
+        .accessibilityValue(action == .detection ? state.detectionTitle : "")
+        .accessibilityIdentifier("panel.\(action.rawValue)")
+    }
+
+    private func tint(for action: PanelAction) -> Color {
+        switch action {
+        case .close: return .red
+        case .frameRate: return .orange
+        case .threshold: return detectionColor
+        case .detection: return state.value.detection ? detectionColor : .gray
+        case .resize: return .accentColor
         }
     }
 
     @ViewBuilder private func label(_ action: PanelAction) -> some View {
         switch action {
         case .close:
-            Image(systemName: "xmark.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.red)
-                .shadow(color: .black.opacity(0.34), radius: hoveredControl == .close ? 3 : 1)
-                .scaleEffect(hoveredControl == .close && !reduceMotion ? 1.18 : 1)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: hoveredControl)
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 12, height: 12)
         case .frameRate:
             Text("\(state.value.fps) FPS")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(.ultraThickMaterial, in: Capsule())
         case .threshold:
             Text("\(Int(state.value.threshold))s")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(detectionColor)
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(.ultraThickMaterial, in: Capsule())
         case .detection:
             Image(systemName: "circle.fill")
                 .font(.system(size: 10))
-                .foregroundStyle(state.value.detection ? detectionColor : .white.opacity(0.5))
-                .shadow(color: .black.opacity(0.4), radius: 1)
+                .frame(width: 12, height: 12)
                 .symbolEffect(.pulse, options: .repeating, isActive: state.value.idle && !reduceMotion)
         case .resize:
             EmptyView()

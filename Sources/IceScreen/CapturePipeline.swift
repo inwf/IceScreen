@@ -269,6 +269,8 @@ final class FrameView: NSView {
     private let renderer = FrameRenderer.shared
     private var current: CVPixelBuffer?
     private let inFlight = DispatchSemaphore(value: 2)
+    private var frameGeneration = 0
+    var onFirstFrameRendered: (() -> Void)?
     var enhanced = false { didSet { if oldValue != enhanced { render() } } }
 
     override init(frame: NSRect) {
@@ -295,7 +297,7 @@ final class FrameView: NSView {
 
     func display(_ buffer: CVPixelBuffer) { current = buffer; render() }
     func redraw() { render() }
-    func releaseFrame() { current = nil }
+    func releaseFrame() { frameGeneration += 1; current = nil }
 
     private func render() {
         guard let current, window?.isVisible == true, window?.alphaValue ?? 0 > 0,
@@ -315,7 +317,21 @@ final class FrameView: NSView {
         renderer.context.render(image, to: drawable.texture, commandBuffer: command,
                                 bounds: CGRect(origin: .zero, size: target), colorSpace: renderer.colorSpace)
         let semaphore = inFlight
-        command.addCompletedHandler { _ in semaphore.signal() }
+        if onFirstFrameRendered != nil {
+            let generation = frameGeneration
+            command.addCompletedHandler { [weak self] command in
+                semaphore.signal()
+                guard command.status == .completed else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.frameGeneration == generation else { return }
+                    let callback = self.onFirstFrameRendered
+                    self.onFirstFrameRendered = nil
+                    callback?()
+                }
+            }
+        } else {
+            command.addCompletedHandler { _ in semaphore.signal() }
+        }
         command.present(drawable)
         command.commit()
     }

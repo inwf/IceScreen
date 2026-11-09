@@ -37,6 +37,7 @@ final class ApplicationModel: ObservableObject {
     let catalog = WindowCatalog()
     let hotkeys = HotkeyMonitor()
     let media = MediaController()
+    let placement = SourceWindowPlacement()
     let selector = RegionSelector()
     let preview = QuickLookPreview()
     private let detectionActions = DetectionActions()
@@ -80,14 +81,16 @@ final class ApplicationModel: ObservableObject {
             if self.preview.isPresented { self.preview.close(); return true }
             guard let session = self.hovered(includeAutoHidden: true) else { return false }
             if self.settings.value.mediaSpace, session.mediaSnapshot != nil {
-                self.preview.pressMedia(session, previewEnabled: self.settings.value.quickLook)
+                self.preview.pressMedia(session, previewEnabled: self.settings.value.quickLook && !session.stageInactive)
                 return true
             }
             guard self.settings.value.quickLook else { return false }
+            guard !session.stageInactive else { session.showHint("请先返回来源窗口所在的台前调度分组。"); return true }
             self.preview.press(session)
             return true
         }
         hotkeys.onSpaceUp = { [weak self] in self?.preview.release() }
+        hotkeys.onSpaceCancel = { [weak self] in self?.preview.close() }
         hotkeys.onEscape = { [weak self] in
             guard let self, self.preview.isPresented else { return false }
             self.preview.close(); return true
@@ -95,6 +98,10 @@ final class ApplicationModel: ObservableObject {
         preview.onError = { [weak self] in self?.error = $0.localizedDescription }
         media.onChange = { [weak self] snapshots in self?.sessions.forEach { $0.updateMedia(snapshots) } }
         media.onError = { [weak self] message in self?.sessions.forEach { $0.showHint(message) } }
+        placement.onError = { [weak self] message in self?.sessions.forEach { $0.showHint(message) } }
+        placement.onParked = { [weak self] id, parked in
+            self?.sessions.first(where: { $0.source.windowID == id })?.sourceParked = parked
+        }
         detectionActions.onError = { [weak self] in self?.error = $0 }
         detectionActions.onOpen = { [weak self] id in self?.sessions.first { $0.id == id }?.focusSource() }
         focusMonitor.onChange = { [weak self] windowID in
@@ -112,6 +119,11 @@ final class ApplicationModel: ObservableObject {
             if previous.triggerModifier != value.triggerModifier { self.hotkeys.triggerModifier = value.triggerModifier }
             if !value.quickLook { self.preview.close() }
             if previous.mediaSpace != value.mediaSpace { self.preview.close() }
+            if previous.moveSourceOffscreen != value.moveSourceOffscreen {
+                if value.moveSourceOffscreen {
+                    for session in self.sessions where session.hasCapturedFrame { self.parkSource(session) }
+                } else { self.placement.restoreAll() }
+            }
             for session in self.sessions {
                 session.applyPreferences(value)
                 if previous.autoHide != value.autoHide { session.autoHide = value.autoHide }
@@ -139,6 +151,15 @@ final class ApplicationModel: ObservableObject {
                 if app.processIdentifier != ProcessInfo.processInfo.processIdentifier { self.lastExternalPID = app.processIdentifier }
                 else { self.checkPermissions() }
                 if !self.sessions.isEmpty {
+                    self.placement.refresh()
+                    let focusedID = SourceFocusMonitor.focusedWindowID(app.processIdentifier)
+                    for session in self.sessions where session.source.windowID == focusedID {
+                        if self.placement.isParked(session.source.windowID) {
+                            do { try self.placement.restore(session.source.windowID) }
+                            catch { session.showHint(error.localizedDescription) }
+                        }
+                    }
+                    self.scheduleStageRefresh()
                     self.focusMonitor.observe(app.processIdentifier)
                     self.focusMonitor.refresh()
                 }
@@ -159,6 +180,9 @@ final class ApplicationModel: ObservableObject {
                 guard let self, let app = notice.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
                 self.sessions.filter { $0.source.owningApplication?.processID == app.processIdentifier }.forEach { $0.close() }
             }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleStageRefresh() }
         })
         checkPermissions()
     }
@@ -285,6 +309,8 @@ final class ApplicationModel: ObservableObject {
         let session = CaptureSession(source: source, viewport: viewport, preferences: settings.value, offset: sessions.count)
         session.onClose = { [weak self] value in
             guard let self else { return }
+            do { try self.placement.restore(value.source.windowID) }
+            catch { self.error = error.localizedDescription }
             if self.preview.sourceID == value.source.windowID { self.preview.close() }
             self.detectionActions.close(value.id)
             self.sessions.removeAll { $0.id == value.id }
@@ -292,10 +318,20 @@ final class ApplicationModel: ObservableObject {
         }
         session.onFocus = { [weak self] source in
             guard let self else { throw CancellationError() }
+            try self.placement.restore(source.windowID)
             try await self.catalog.focus(source)
+        }
+        session.onCaptureReady = { [weak self, weak session] in
+            guard let self, let session, self.settings.value.moveSourceOffscreen else { return }
+            self.parkSource(session)
+        }
+        session.onPark = { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.parkSource(session)
         }
         session.onPreview = { [weak self, weak session] in
             guard let self, let session else { return }
+            guard !session.stageInactive else { session.showHint("请先返回来源窗口所在的台前调度分组。"); return }
             self.preview.show(session)
         }
         session.onMedia = { [weak self] in self?.media.send($0) }
@@ -388,6 +424,7 @@ final class ApplicationModel: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let now = ProcessInfo.processInfo.systemUptime
+                self.placement.refresh()
                 Array(self.sessions).forEach { $0.tick(at: now) }
             }
         }
@@ -415,10 +452,29 @@ final class ApplicationModel: ObservableObject {
         else { media.stop() }
     }
 
+    private func parkSource(_ session: CaptureSession) {
+        guard !session.stageInactive else { return }
+        do { try placement.park(session.source) }
+        catch { session.showHint(error.localizedDescription) }
+    }
+
+    private var stageRefreshTask: Task<Void, Never>?
+    private func scheduleStageRefresh() {
+        stageRefreshTask?.cancel()
+        stageRefreshTask = Task { [weak self] in
+            for delay in [100, 250, 500] {
+                do { try await Task.sleep(for: .milliseconds(delay)) } catch { return }
+                self?.sessions.forEach { $0.refreshSourceState() }
+            }
+        }
+    }
+
     func shutdown() {
         selector.cancel()
         preview.close()
         closeAll()
+        placement.shutdown()
+        stageRefreshTask?.cancel()
         detectionActions.shutdown()
         stopSessionMonitoring()
         hotkeys.stop()

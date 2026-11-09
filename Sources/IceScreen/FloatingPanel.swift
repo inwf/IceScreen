@@ -3,6 +3,7 @@ import AppKit
 import ScreenCaptureKit
 import SwiftUI
 import OSLog
+import ApplicationServices
 import IceCore
 
 @MainActor
@@ -45,6 +46,20 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var onResize: ((Double) -> Void)?
     var onChange: (() -> Void)?
     var onMedia: ((MediaRequest) -> Void)?
+    var onCaptureReady: (() -> Void)?
+    var onPark: (() -> Void)?
+    private(set) var hasCapturedFrame = false
+    private var shouldParkOnFirstFrame = true
+    var sourceParked = false {
+        didSet {
+            if sourceParked { sourcePaused = false }
+            if oldValue && !sourceParked { sourceWasRecalled = true }
+            syncRunning(); updateStatus()
+        }
+    }
+    private(set) var stageInactive = false
+    private var moveSourceOffscreen = true
+    private var sourceWasRecalled = false
     private(set) var mediaSnapshot: MediaSnapshot?
     private var mediaEnabled = true
     private(set) var mediaSeekEnabled = true
@@ -124,7 +139,19 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         surface.onContentClick = { [weak self] in self?.clicked() }
         applyPreferences(preferences)
         surface.frameView.enhanced = enhanced
-        pipeline.output.mailbox.deliver = { [weak surface] buffer in surface?.frameView.display(buffer) }
+        pipeline.output.mailbox.deliver = { [weak self] buffer in
+            guard let self, !self.closed else { return }
+            self.surface.frameView.display(buffer)
+            if !self.hasCapturedFrame {
+                self.hasCapturedFrame = true
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !self.closed else { return }
+                    self.refreshSourceState()
+                    if self.shouldParkOnFirstFrame { self.onCaptureReady?() }
+                    self.shouldParkOnFirstFrame = false
+                }
+            }
+        }
         pipeline.output.onActivity = { [weak self] initial in
             guard let self, !self.closed, !self.detectionSuspended else { return }
             let now = ProcessInfo.processInfo.systemUptime
@@ -162,7 +189,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     private func syncRunning() {
-        let running = !closed && !sourcePaused && visibility.shouldCapture
+        let running = !closed && !sourcePaused && !stageInactive && visibility.shouldCapture
         if detectionSuspended == running {
             detectionSuspended = !running
             detection.reset()
@@ -216,6 +243,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         idleSeconds = value.idleSeconds
         changeSeconds = value.changeSeconds
         clickToFocus = value.clickToFocus
+        moveSourceOffscreen = value.moveSourceOffscreen
+        if !value.moveSourceOffscreen { sourceWasRecalled = false }
         mediaEnabled = value.mediaControls
         mediaSeekEnabled = value.mediaSeek
         if !mediaEnabled { mediaSnapshot = nil }
@@ -239,6 +268,11 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         guard let mediaSnapshot else { return }
         if action == "seek", (!mediaSeekEnabled || !mediaSnapshot.seekable) { return }
         onMedia?(.init(id: mediaSnapshot.id, action: action, position: position))
+        if action == "seek", let position, position.isFinite {
+            self.mediaSnapshot?.elapsed = min(mediaSnapshot.duration ?? position, max(0, position))
+            self.mediaSnapshot?.timestamp = Date().timeIntervalSince1970
+            updateStatus()
+        }
     }
     @discardableResult func seekMedia(relative seconds: Double) -> Bool {
         guard mediaSeekEnabled, let snapshot = mediaSnapshot,
@@ -251,7 +285,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         let focused = windowID == source.windowID
         if !focused && focusTask == nil { preserveOnSourceFocus = false }
         if focused && behavior == .close && !preserveOnSourceFocus { close(); return }
-        sourcePaused = focused && behavior == .pause
+        sourcePaused = focused && behavior == .pause && !sourceParked
         syncRunning()
         updateStatus()
     }
@@ -259,6 +293,11 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     func clicked() {
         Self.interactionLog.debug("Content click: enabled=\(self.clickToFocus), closed=\(self.closed)")
         guard clickToFocus, !closed else { return }
+        if moveSourceOffscreen && sourceWasRecalled && !sourceParked && focusTask == nil && onPark != nil {
+            onPark?()
+            if sourceParked { sourceWasRecalled = false }
+            return
+        }
         focusSource()
     }
 
@@ -313,6 +352,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
     private func requestFocus(closeAfter: Bool) {
         guard !closed, let onFocus else { return }
+        shouldParkOnFirstFrame = false
         preserveOnSourceFocus = true
         closeAfterFocus = closeAfterFocus || closeAfter
         guard focusTask == nil else { return }
@@ -324,6 +364,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             do {
                 try await onFocus(self.source)
                 try Task.checkCancellation()
+                self.sourceWasRecalled = true
+                self.refreshSourceState()
                 Self.interactionLog.debug("Source window focus confirmed")
                 if self.closeAfterFocus { self.close() }
             } catch {
@@ -407,6 +449,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         }
     }
 
+    func refreshSourceState() { checkSourceGeometry() }
+
     private func checkSourceGeometry() {
         guard let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, source.windowID) as? [[String: Any]] else { return }
         guard let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == source.windowID }) else {
@@ -414,12 +458,33 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         }
         guard let bounds = entry[kCGWindowBounds as String] as? [String: Any],
               let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), frame.width > 0, frame.height > 0 else { return }
+        let enabled = (CFPreferencesCopyAppValue("GloballyEnabled" as CFString, "com.apple.WindowManager" as CFString) as? Bool) == true
+        var fullSize = sourceSize
+        let possibleThumbnail = enabled && !sourceParked && StageManagerGeometry.isThumbnailShape(frame, screens: SourceWindowPlacement.screens)
+        if possibleThumbnail, let pid = source.owningApplication?.processID {
+            do {
+                let element = try SourceWindowPlacement.element(pid: pid, id: source.windowID)
+                fullSize = try SourceWindowPlacement.frame(element).size
+            } catch {
+                fullSize = frame.size
+                Self.interactionLog.debug("Stage geometry unavailable: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        let inactive = StageManagerGeometry.isInactive(enabled: enabled, frame: frame, fullSize: fullSize,
+                                                      screens: SourceWindowPlacement.screens, intentionallyParked: sourceParked)
+        if stageInactive != inactive {
+            stageInactive = inactive
+            syncRunning()
+            updateStatus()
+        }
+        guard !inactive else { return }
         if sourceSize != frame.size { sourceSize = frame.size; fitPanelToContent(); configure() }
     }
 
     func updateStatus() {
         surface.update(title: title, status: status, idle: idle, detection: idleDetection || changeDetection,
-                       message: failure ?? (paused || sourcePaused ? "捕获已暂停" : (detectedChangeUntil > 0 ? "检测到新的画面变化" : nil)))
+                       message: failure ?? (stageInactive ? "来源窗口位于台前调度的其他分组\n返回来源窗口后继续捕获" :
+                           (paused || sourcePaused ? "捕获已暂停" : (detectedChangeUntil > 0 ? "检测到新的画面变化" : nil))))
         onChange?()
     }
 
@@ -626,6 +691,7 @@ final class PanelSurface: NSView {
             value.zoomed = owner.viewport.magnification > 1.001
             value.media = owner.mediaSnapshot
             value.mediaSeek = owner.mediaSeekEnabled
+            value.stageInactive = owner.stageInactive
         }
         if value != chromeState.value {
             if value.hovered != chromeState.value.hovered && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -681,6 +747,7 @@ final class PanelSurface: NSView {
         case .previousTrack: owner?.mediaAction("previous")
         case .nextTrack: owner?.mediaAction("next")
         case .seek: break
+        case .returnSource: owner?.focusSource()
         }
     }
     @objc private func showDetectionMenu() {

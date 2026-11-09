@@ -4,7 +4,7 @@ import SwiftUI
 import IceCore
 
 enum PanelAction: String, CaseIterable {
-    case close, frameRate, threshold, detection, resize, playPause, previousTrack, nextTrack, seek
+    case close, frameRate, threshold, detection, resize, playPause, previousTrack, nextTrack, seek, returnSource
 
     var label: String {
         switch self {
@@ -17,6 +17,7 @@ enum PanelAction: String, CaseIterable {
         case .previousTrack: return "上一首"
         case .nextTrack: return "下一首"
         case .seek: return "播放进度 · ← → 调整 5 秒"
+        case .returnSource: return "返回来源窗口"
         }
     }
 }
@@ -42,6 +43,7 @@ final class PanelChromeState: ObservableObject {
         var message: String?
         var media: MediaSnapshot?
         var mediaSeek = true
+        var stageInactive = false
     }
     @Published var value = Value()
     var perform: ((PanelAction) -> Void)?
@@ -67,7 +69,7 @@ final class PanelChromeState: ObservableObject {
             if size.height >= 80 {
                 items.append(.init(id: .resize, frame: CGRect(x: size.width - 38, y: size.height - 38, width: 30, height: 30)))
             }
-            if let media = value.media, size.height >= 100, size.width >= 150 {
+            if let media = value.media, !value.stageInactive, size.height >= 100, size.width >= 150 {
                 let hasSeek = value.mediaSeek && media.seekable && size.height >= 145 && size.width >= 230
                 let y = size.height - (hasSeek ? 80 : 40)
                 items.append(.init(id: .playPause, frame: CGRect(x: size.width / 2 - 15, y: y, width: 30, height: 30)))
@@ -82,6 +84,9 @@ final class PanelChromeState: ObservableObject {
         }
         if value.hovered || value.detection {
             items.append(.init(id: .detection, frame: CGRect(x: size.width - 38, y: 8, width: 30, height: 30)))
+        }
+        if value.stageInactive && size.width >= 180 && size.height >= 140 {
+            items.append(.init(id: .returnSource, frame: CGRect(x: size.width / 2 - 54, y: size.height / 2 + 32, width: 108, height: 30)))
         }
         return items
     }
@@ -177,7 +182,7 @@ struct PanelChrome: View {
             button(action)
                 .buttonStyle(.glass(.clear.interactive()))
                 .buttonSizing(.flexible)
-                .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
+                .buttonBorderShape(action == .frameRate || action == .threshold || action == .returnSource ? .capsule : .circle)
                 .glassEffectID(action, in: glassNamespace)
                 .glassEffectTransition(.materialize)
         } else {
@@ -232,6 +237,8 @@ struct PanelChrome: View {
             Image(systemName: "forward.end.fill").font(.system(size: 12))
         case .seek:
             EmptyView()
+        case .returnSource:
+            Text("返回来源窗口").font(.system(size: 12))
         }
     }
 }

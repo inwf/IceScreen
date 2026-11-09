@@ -19,6 +19,7 @@ final class HotkeyMonitor {
     var onHoverAction: ((HoverAction) -> Bool)?
     var onSpaceDown: (() -> Bool)?
     var onSpaceUp: (() -> Void)?
+    var onSpaceCancel: (() -> Void)?
     var onEscape: (() -> Bool)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
@@ -77,7 +78,7 @@ final class HotkeyMonitor {
         tap = nil; source = nil
         functionGesture.reset()
         consumedKeys.removeAll()
-        if previewKeyHeld { onSpaceUp?(); previewKeyHeld = false }
+        if previewKeyHeld { onSpaceCancel?(); previewKeyHeld = false }
         consumedMouseDown = false
         cancelPendingTap()
     }
@@ -86,7 +87,7 @@ final class HotkeyMonitor {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             functionGesture.reset()
             consumedKeys.removeAll()
-            if previewKeyHeld { onSpaceUp?(); previewKeyHeld = false }
+            if previewKeyHeld { onSpaceCancel?(); previewKeyHeld = false }
             consumedMouseDown = false
             cancelPendingTap()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }

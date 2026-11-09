@@ -11,6 +11,9 @@ enum IceScreenApp {
     @MainActor
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.count == 2, arguments[0] == "--watch-source-windows" {
+            SourceWindowPlacement.watch(arguments[1]); return
+        }
         if arguments.count == 2, arguments[0] == "--run-detection-command" { DetectionCommand.execute(arguments[1]) }
         if arguments == ["--help"] || arguments == ["-h"] { print(CaptureRequest.usage); return }
         let request: CaptureRequest?
@@ -59,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     init(initialRequest: CaptureRequest?) { self.initialRequest = initialRequest; super.init() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        SourceWindowPlacement.recoverAbandoned()
         model = ApplicationModel()
         errorSubscription = model.$error.compactMap { $0 }.sink { [weak self] _ in
             DispatchQueue.main.async { self?.showSettings() }

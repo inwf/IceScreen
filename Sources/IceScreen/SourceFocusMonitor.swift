@@ -35,7 +35,7 @@ final class SourceFocusMonitor {
         pid = nil
     }
 
-    private static func focusedWindowID(_ pid: pid_t) -> CGWindowID? {
+    static func focusedWindowID(_ pid: pid_t) -> CGWindowID? {
         var result: CFTypeRef?
         let app = AXUIElementCreateApplication(pid)
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &result) == .success,
@@ -50,7 +50,7 @@ final class SourceFocusMonitor {
         var position = CGPoint.zero, size = CGSize.zero
         AXValueGetValue(unsafeBitCast(positionValue, to: AXValue.self), .cgPoint, &position)
         AXValueGetValue(unsafeBitCast(sizeValue, to: AXValue.self), .cgSize, &size)
-        let entries = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let entries = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let matches: [(CGWindowID, Double)] = entries.compactMap { entry in
             guard entry[kCGWindowOwnerPID as String] as? pid_t == pid,
                   entry[kCGWindowLayer as String] as? Int == 0,

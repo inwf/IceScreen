@@ -8,6 +8,23 @@ enum SourceFocusChecks {
     @MainActor static func main() {
         let app = NSApplication.shared
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.count == 2, arguments[0] == "--watch-source-windows" {
+            SourceWindowPlacement.watch(arguments[1]); return
+        }
+        if arguments.count == 2, arguments[0] == "--park-and-crash" {
+            app.setActivationPolicy(.accessory); app.finishLaunching()
+            Task { @MainActor in
+                let catalog = WindowCatalog()
+                await catalog.refresh()
+                guard let source = catalog.windows.first(where: { String($0.windowID) == arguments[1] }) else { exit(70) }
+                do {
+                    let placement = SourceWindowPlacement()
+                    try placement.park(source)
+                    raise(SIGKILL)
+                } catch { fputs("\(error)\n", stderr); exit(71) }
+            }
+            app.run(); return
+        }
         if arguments.first == "--fixture" {
             app.setActivationPolicy(.regular)
             app.finishLaunching()
@@ -65,6 +82,7 @@ enum SourceFocusChecks {
         var preferences = Preferences()
         preferences.autoHide = false
         preferences.clickToFocus = true
+        preferences.moveSourceOffscreen = false
         let session = CaptureSession(source: source, viewport: .full, preferences: preferences, offset: 0)
         defer { session.close() }
         var confirmations = 0
@@ -107,6 +125,42 @@ enum SourceFocusChecks {
         click(session)
         try await wait { confirmations == before + 1 }
         precondition(sourceApp.isActive && focusedTitle(sourceApp) == source.title, "A minimized or hidden source must be restored.")
+
+        let placement = SourceWindowPlacement()
+        defer { placement.shutdown() }
+        let original = try SourceWindowPlacement.frame(target)
+        placement.onParked = { _, parked in session.sourceParked = parked }
+        session.onPark = {
+            do { try placement.park(source) } catch { fatalError("Parking failed: \(error)") }
+        }
+        session.onFocus = { window in
+            try placement.restore(window.windowID)
+            try await catalog.focus(window)
+            confirmations += 1
+        }
+        session.onClose = { value in
+            do { try placement.restore(value.source.windowID) } catch { fatalError("Restoration failed: \(error)") }
+        }
+        preferences.moveSourceOffscreen = true; session.applyPreferences(preferences)
+        try placement.park(source)
+        precondition(placement.isParked(source.windowID) && session.sourceParked)
+        let expected = confirmations + 1
+        click(session)
+        try await wait { confirmations == expected }
+        precondition(!placement.isParked(source.windowID))
+        let restored = try SourceWindowPlacement.frame(target)
+        precondition(restored.origin == original.origin)
+        click(session)
+        precondition(placement.isParked(source.windowID), "The next click must put the recalled source away.")
+        try placement.restore(source.windowID)
+
+        let crashing = Process()
+        crashing.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        crashing.arguments = ["--park-and-crash", String(source.windowID)]
+        try crashing.run()
+        try await wait { !crashing.isRunning }
+        precondition(crashing.terminationReason == .uncaughtSignal && crashing.terminationStatus == SIGKILL)
+        try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
 
         try await catalog.focus(other)
         click(session)

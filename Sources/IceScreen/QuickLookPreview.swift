@@ -16,12 +16,13 @@ final class QuickLookPreview {
     private var mouseGlobal: Any?
     private var mouseLocal: Any?
     private(set) var sourceID: CGWindowID?
-    var isPresented: Bool { gesture.isPresented }
+    var isPresented: Bool { gesture.isPresented || mediaGesture.pressedAt != nil }
     var onError: ((Error) -> Void)?
 
     func pressMedia(_ session: CaptureSession, previewEnabled: Bool) {
         close(animated: false)
         mediaSession = session
+        sourceID = session.source.windowID
         mediaGesture.press(at: ProcessInfo.processInfo.systemUptime)
         guard previewEnabled else { return }
         mediaHoldTask = Task { [weak self, weak session] in

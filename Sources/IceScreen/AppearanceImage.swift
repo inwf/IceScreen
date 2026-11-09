@@ -34,6 +34,7 @@ struct AppearanceImage {
                                       bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue) else {
             throw ImageError.allocation
         }
+        context.setBlendMode(.copy)
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return AppearanceImage(name: url.lastPathComponent, pixels: buffer)
     }

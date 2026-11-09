@@ -90,6 +90,7 @@ struct AppearancePreview: NSViewRepresentable {
 
 @MainActor
 final class AppearancePreviewView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
     let surface = PanelSurface(frame: .zero)
     private var sample: CVPixelBuffer?
     private var dark = false

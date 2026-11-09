@@ -71,6 +71,7 @@ enum PanelEventChecks {
         precondition(preview.surface.frameView.enhanced && preview.surface.hoverBlur == 0.8)
         let contentPoint = preview.convert(CGPoint(x: preview.bounds.midX, y: preview.bounds.midY), to: preview.superview)
         precondition(preview.hitTest(contentPoint) === preview, "Preview content must not route to floating-window gestures.")
+        precondition(!preview.mouseDownCanMoveWindow, "Preview content must not start dragging the settings window.")
         func hover(_ inside: Bool) {
             let event = NSEvent.enterExitEvent(with: inside ? .mouseEntered : .mouseExited,
                                               location: .zero, modifierFlags: [], timestamp: 0,
@@ -375,7 +376,16 @@ enum PanelEventChecks {
         checkButton(24, 24, .close)
         checkButton(96, 24, .detection)
         precondition(hit(65, 19) is PanelInput, "Compact panels must preserve content between the corner controls.")
+        for size in [NSSize(width: 70, height: 180), NSSize(width: 320, height: 30)] {
+            panel.setContentSize(size)
+            surface.layoutSubtreeIfNeeded()
+            let center = surface.convert(CGPoint(x: size.width / 2, y: size.height / 2), to: nil)
+            precondition(surface.control(atWindowPoint: center) == nil,
+                         "Very narrow content must not be covered by overlapping controls.")
+            precondition(surface.target(atWindowPoint: center) is PanelInput)
+        }
 
+        panel.setContentSize(NSSize(width: 360, height: 240))
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 240))
         panel.contentView = container
         surface.frame = NSRect(x: 30, y: 40, width: 120, height: 80)

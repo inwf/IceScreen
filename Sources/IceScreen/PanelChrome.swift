@@ -46,6 +46,7 @@ final class PanelChromeState: ObservableObject {
     }
 
     func regions(in size: CGSize) -> [PanelControlRegion] {
+        guard size.width >= 80, size.height >= 46 else { return [] }
         var items: [PanelControlRegion] = []
         if value.hovered {
             items.append(.init(id: .close, frame: CGRect(x: 8, y: 8, width: 30, height: 30)))
@@ -70,8 +71,6 @@ struct PanelChrome: View {
     @ObservedObject var state: PanelChromeState
     @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var detectionColor: Color { state.value.changeDetection ? .blue : .green }
 
@@ -147,11 +146,10 @@ struct PanelChrome: View {
             }
         } else if #available(macOS 26.0, *) {
             button(action)
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.glass)
                 .buttonSizing(.flexible)
                 .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
-                .tint(reduceTransparency ? Color.accentColor : Color.white.opacity(colorScheme == .dark ? 0.16 : 0.32))
-                .foregroundStyle(reduceTransparency ? Color.white : Color.primary)
+                .foregroundStyle(.primary)
                 .glassEffectID(action, in: glassNamespace)
                 .glassEffectTransition(.materialize)
         } else {

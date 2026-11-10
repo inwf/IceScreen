@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         installMenu()
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        status.button?.image = NSImage(systemSymbolName: "square.on.square.dashed", accessibilityDescription: "IceScreen")
+        status.button?.image = MenuBarIcon.make()
         status.button?.toolTip = "IceScreen"
         let menu = NSMenu()
         menu.delegate = self

@@ -27,7 +27,7 @@ cp Sources/IceScreen/Resources/Info.plist "$app_dir/Contents/Info.plist"
 cp LICENSE NOTICE "$app_dir/Contents/Resources/"
 cp Sources/IceScreen/Resources/media-bridge.pl "$app_dir/Contents/Resources/"
 cp "$binary_dir/libIceMediaBridge.dylib" "$app_dir/Contents/Frameworks/"
-swift scripts/make-icon.swift .build/iconset
+swift scripts/make-icon.swift assets/AppIcon.png .build/iconset
 iconutil -c icns .build/iconset/AppIcon.iconset -o "$app_dir/Contents/Resources/AppIcon.icns"
 if [[ "$configuration" == "release" ]]; then
     strip -x "$app_dir/Contents/MacOS/IceScreen"

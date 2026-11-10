@@ -32,6 +32,8 @@ bash scripts/package-dmg.sh
 
 构建脚本生成图标、应用包、本地签名和压缩 DMG，并执行映像校验。发布者可设置 `SIGN_IDENTITY` 使用自己的 Developer ID；公证需要发布者的 Apple 开发者凭据。CI 会编译、测试并保存通用应用 DMG 与 ZIP。
 
+应用图标原图为 `assets/AppIcon.png`。`scripts/make-icon.swift` 从原图生成 16–1024 像素的标准及 Retina 图标，供 Finder、程序坞、关于界面和 DMG 卷图标共用。菜单栏采用独立的冰淇淋轮廓模板图标，由系统适配深浅色。
+
 首次启动，在设置中允许「屏幕录制」和「辅助功能」，聚焦需要捕获的来源窗口，再按 `fn + P`。辅助功能用于全局按键和定位来源窗口；系统可能同时要求输入监控权限。授权后按 macOS 提示重新启动应用。正式使用时将应用放到 `/Applications`，保持路径稳定。
 
 ## 使用

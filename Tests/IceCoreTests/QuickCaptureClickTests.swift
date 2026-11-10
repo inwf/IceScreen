@@ -2,6 +2,16 @@ import XCTest
 @testable import IceCore
 
 final class QuickCaptureClickTests: XCTestCase {
+    func testSuppressedFirstClickDoesNotRequireTheSystemToIncrementClickCount() {
+        var gate = QuickCaptureClickGate<Int>(interval: 0.5)
+        _ = gate.handle(.down, event: 1, at: 0, position: .zero, eligible: true)
+        _ = gate.handle(.up, event: 2, at: 0.05, position: .zero, eligible: true)
+        let second = gate.handle(.down, event: 3, at: 0.2, position: .zero, eligible: true, clickCount: 1)
+        XCTAssertTrue(second.consume && second.capture)
+        XCTAssertTrue(second.replay.isEmpty)
+        XCTAssertTrue(gate.handle(.up, event: 4, at: 0.25, position: .zero, eligible: true).consume)
+    }
+
     func testCustomCombinationRequiresAnExactMatchForBothClicks() {
         let combination: QuickCaptureModifiers = [.command, .shift]
         for held: QuickCaptureModifiers in [[], .command, .shift, [.command, .shift, .option], .function] {

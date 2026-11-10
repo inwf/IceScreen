@@ -64,6 +64,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private var panelOpacity = 1.0
     private var triggerLabel = "fn"
     private var interactionDepth = 0
+    private var magnificationGesture = PinchZoomGesture()
     private var detection = ContentDetection()
     private var detectionSuspended = true
     private var detectedChangeUntil: TimeInterval = 0
@@ -194,6 +195,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func suspend(_ value: Bool, display: Bool) {
+        if value { surface.cancelGesture() }
         if display { visibility.displaySleeping = value } else { visibility.systemSleeping = value }
         syncRunning()
     }
@@ -207,6 +209,36 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         configure()
         idle = false
         updateStatus()
+    }
+
+    func beginMagnification(at screenPoint: NSPoint) {
+        guard !closed, panel.isVisible, !panel.ignoresMouseEvents, !hidden, !autoHidden, !stageInactive,
+              surface.bounds.width > 0, surface.bounds.height > 0 else { return }
+        endMagnification()
+        let point = surface.convert(panel.convertPoint(fromScreen: screenPoint), from: nil)
+        magnificationGesture.begin(viewport: viewport,
+            anchor: CGPoint(x: point.x / surface.bounds.width, y: point.y / surface.bounds.height))
+        beginInteraction()
+    }
+
+    func changeMagnification(by amount: Double) {
+        guard !closed, panel.isVisible, !hidden, !stageInactive,
+              let value = magnificationGesture.change(by: amount) else { return }
+        setViewport(value)
+    }
+
+    func endMagnification() {
+        guard magnificationGesture.isActive else { return }
+        magnificationGesture.end()
+        endInteraction()
+    }
+
+    func magnify(with event: NSEvent) {
+        if event.phase.contains(.began) || !magnificationGesture.isActive {
+            beginMagnification(at: panel.convertPoint(toScreen: event.locationInWindow))
+        }
+        if !event.phase.contains(.cancelled) { changeMagnification(by: Double(event.magnification)) }
+        if !event.phase.intersection([.ended, .cancelled]).isEmpty { endMagnification() }
     }
 
     private func fitPanelToContent() {
@@ -703,7 +735,7 @@ final class PanelSurface: NSView {
     func target(atWindowPoint point: NSPoint) -> NSView? {
         target(at: convert(point, from: nil))
     }
-    func cancelGesture() { input.cancelGesture() }
+    func cancelGesture() { input.cancelGesture(); owner?.endMagnification() }
     func control(atWindowPoint point: NSPoint) -> PanelAction? {
         controls.region(at: controls.convert(point, from: nil))?.id
     }
@@ -861,10 +893,7 @@ final class PanelInput: NSControl {
         }
     }
     override func magnify(with event: NSEvent) {
-        guard let owner else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        owner.setViewport(owner.viewport.zoomed(by: max(0.1, 1 + Double(event.magnification)),
-            around: CGPoint(x: point.x / bounds.width, y: point.y / bounds.height)))
+        owner?.magnify(with: event)
     }
     override func rightMouseDown(with event: NSEvent) {
         guard let menu = owner?.makeMenu() else { return }

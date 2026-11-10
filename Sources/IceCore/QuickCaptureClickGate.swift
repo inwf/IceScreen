@@ -38,7 +38,7 @@ public struct QuickCaptureClickGate<Event> {
         let moved = hypot(position.x - origin.x, position.y - origin.y) > movementTolerance
         switch input {
         case .down:
-            if !pending.isEmpty, firstReleased, eligible, clickCount == 2, !moved {
+            if !pending.isEmpty, firstReleased, eligible, (1...2).contains(clickCount), !moved {
                 pending.removeAll(keepingCapacity: true)
                 deadline = nil
                 firstReleased = false

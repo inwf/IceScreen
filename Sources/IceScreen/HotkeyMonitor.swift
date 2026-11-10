@@ -17,7 +17,7 @@ final class HotkeyMonitor {
         didSet { functionGesture.reset(); cancelPendingTap(); flushPendingClicks() }
     }
     var recording = false {
-        didSet { functionGesture.reset(); cancelPendingTap(); flushPendingClicks() }
+        didSet { functionGesture.reset(); cancelPendingTap(); flushPendingClicks(); onGestureReset?() }
     }
     var onCapture: ((Bool) -> Void)?
     var onQuickRegion: ((CGPoint) -> Void)?
@@ -29,6 +29,8 @@ final class HotkeyMonitor {
     var onSpaceUp: (() -> Void)?
     var onSpaceCancel: (() -> Void)?
     var onEscape: (() -> Bool)?
+    var onTrackpadGesture: ((NSEvent, CGPoint) -> Bool)?
+    var onGestureReset: (() -> Void)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var functionGesture = FunctionKeyGesture()
@@ -37,6 +39,9 @@ final class HotkeyMonitor {
     private var clicks = QuickCaptureClickGate<CGEvent>(interval: NSEvent.doubleClickInterval)
     private var clickTimer: Timer?
     private static let replayMarker: Int64 = 0x494345434C49434B
+    private static let gestureTypes: Set<UInt32> = Set([
+        NSEvent.EventType.gesture, .magnify, .beginGesture, .endGesture
+    ].map { UInt32($0.rawValue) })
     private var taps = ModifierTapSequence(interval: NSEvent.doubleClickInterval)
     private var singleTapTask: Task<Void, Never>?
 
@@ -62,9 +67,10 @@ final class HotkeyMonitor {
     @discardableResult
     func start() -> Bool {
         if tap != nil { return true }
-        let mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .leftMouseUp,
+        var mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .leftMouseUp,
                     .leftMouseDragged, .mouseMoved, .rightMouseDown, .otherMouseDown, .scrollWheel]
             .reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        for type in Self.gestureTypes { mask |= CGEventMask(1) << type }
         let callback: CGEventTapCallBack = { proxy, type, event, context in
             guard let context else { return Unmanaged.passUnretained(event) }
             return MainActor.assumeIsolated {
@@ -84,6 +90,7 @@ final class HotkeyMonitor {
     }
 
     func stop() {
+        onGestureReset?()
         replay(clicks.reset())
         updateClickTimer()
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
@@ -128,6 +135,7 @@ final class HotkeyMonitor {
     private func handle(type: CGEventType, event: CGEvent, proxy: CGEventTapProxy) -> Bool {
         if event.getIntegerValueField(.eventSourceUserData) == Self.replayMarker { return false }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            onGestureReset?()
             replay(clicks.reset(), proxy: proxy)
             updateClickTimer()
             functionGesture.reset()
@@ -136,6 +144,15 @@ final class HotkeyMonitor {
             cancelPendingTap()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
+        }
+        if Self.gestureTypes.contains(type.rawValue) {
+            guard !recording, let gesture = NSEvent(cgEvent: event) else { return false }
+            // 普通触摸也使用 gesture 类型，不能打断正在判定的触控板双击。
+            if gesture.type == .magnify, clicks.deadline != nil {
+                replay(clicks.flush(), proxy: proxy)
+                updateClickTimer()
+            }
+            return onTrackpadGesture?(gesture, NSEvent.mouseLocation) ?? false
         }
         let flags = event.flags
         let function = flags.contains(.maskSecondaryFn)

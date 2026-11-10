@@ -380,6 +380,7 @@ struct QuickCaptureRecorder: NSViewRepresentable {
     }
     func updateNSView(_ view: ShortcutButton, context: Context) {
         let title = "\(modifiers.display) + 双击"
+        view.isEnabled = context.environment.isEnabled
         if !view.recording { view.title = title }
         view.savedTitle = title
         view.onRecordModifiers = { modifiers = $0 }

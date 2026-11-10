@@ -36,6 +36,7 @@ final class ApplicationModel: ObservableObject {
     let settings = SettingsStore()
     let catalog = WindowCatalog()
     let hotkeys = HotkeyMonitor()
+    private let magnification = PanelMagnificationRouter()
     let media = MediaController()
     let selector = RegionSelector()
     let preview = QuickLookPreview()
@@ -74,6 +75,11 @@ final class ApplicationModel: ObservableObject {
         hotkeys.triggerModifier = settings.value.triggerModifier
         hotkeys.onCapture = { [weak self] region in self?.captureFocused(region: region) }
         hotkeys.onQuickRegion = { [weak self] point in self?.quickCapture(at: point) }
+        magnification.sessions = { [weak self] in self?.sessions ?? [] }
+        hotkeys.onTrackpadGesture = { [weak self] event, point in
+            self?.magnification.handle(event, at: point) ?? false
+        }
+        hotkeys.onGestureReset = { [weak self] in self?.magnification.reset() }
         hotkeys.onFunctionTap = { [weak self] in self?.toggleHoveredHidden() }
         hotkeys.onFunctionDoubleTap = { [weak self] in
             guard let self, let session = self.hovered(includeHidden: true, includeAutoHidden: true) else { return }
@@ -418,6 +424,7 @@ final class ApplicationModel: ObservableObject {
     private func pointerMoved() { sessions.forEach { $0.pointerMoved(to: NSEvent.mouseLocation) } }
 
     private func stopSessionMonitoring() {
+        magnification.reset()
         media.stop()
         ticker?.invalidate(); ticker = nil
         focusMonitor.stop()

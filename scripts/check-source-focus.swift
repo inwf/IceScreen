@@ -82,6 +82,27 @@ enum SourceFocusChecks {
         try await catalog.focus(other)
         precondition(!NSApp.isActive && !session.panel.isKeyWindow, "The content click must originate in a background panel.")
 
+        let pinchOrigin = session.panel.convertPoint(toScreen: session.surface.convert(
+            CGPoint(x: session.surface.bounds.width * 0.3, y: session.surface.bounds.height * 0.7), to: nil))
+        session.beginMagnification(at: pinchOrigin)
+        session.changeMagnification(by: 0.2)
+        session.changeMagnification(by: 0.3)
+        precondition(abs(session.viewport.magnification - 1.5) < 0.000001)
+        session.changeMagnification(by: -0.25)
+        precondition(abs(session.viewport.magnification - 1.25) < 0.000001)
+        session.endMagnification()
+        let afterPinch = session.viewport
+        session.changeMagnification(by: 1)
+        precondition(session.viewport == afterPinch, "Ended gestures must ignore late magnification changes.")
+        precondition(otherApp.isActive && !session.panel.isKeyWindow,
+                     "Magnification must keep the foreground app and non-key panel unchanged.")
+        session.beginMagnification(at: pinchOrigin)
+        session.toggleHidden()
+        session.changeMagnification(by: 1)
+        precondition(session.viewport == afterPinch, "Hidden panels must cancel their active magnification.")
+        session.toggleHidden()
+        session.resetZoom()
+
         click(session, point: NSPoint(x: 24, y: session.surface.bounds.height - 24))
         try await wait { confirmations == 1 }
         precondition(sourceApp.isActive && session.panel.isVisible, "Single click must focus the source and retain the panel.")

@@ -100,6 +100,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var showHoverHints = true
     public var panelPosition: ZoomAnchor = .bottomRight
     public var triggerModifier: TriggerModifier = .function
+    public var quickCaptureModifiers: QuickCaptureModifiers = .function
     public var quickLook = true
     public var mediaControls = true
     public var mediaSeek = true
@@ -133,7 +134,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case multiWindow, defaultFPS, appFrameRates, preferredWidth, autoHide, enhanceContrast, idleDetection, idleSeconds, shortcut
         case regionShortcut, closeAllShortcut, clickToFocus, sourceFocusBehavior, showOnFullscreenSpaces
-        case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickLook
+        case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickCaptureModifiers, quickLook
         case changeDetection, changeSeconds, sensitiveDetection, detectionNotifications, detectionCommand, detectionCommandTimeout
         case dimOnHover, hoverBlur, panelOpacity, showMenuBarIcon
         case contrastStrength, sharpnessStrength
@@ -172,6 +173,8 @@ public struct Preferences: Codable, Equatable, Sendable {
         showHoverHints = try c.decodeIfPresent(Bool.self, forKey: .showHoverHints) ?? showHoverHints
         panelPosition = try c.decodeIfPresent(ZoomAnchor.self, forKey: .panelPosition) ?? panelPosition
         triggerModifier = try c.decodeIfPresent(TriggerModifier.self, forKey: .triggerModifier) ?? triggerModifier
+        quickCaptureModifiers = try c.decodeIfPresent(QuickCaptureModifiers.self, forKey: .quickCaptureModifiers)
+            ?? QuickCaptureModifiers(trigger: triggerModifier)
         quickLook = try c.decodeIfPresent(Bool.self, forKey: .quickLook) ?? quickLook
         mediaControls = try c.decodeIfPresent(Bool.self, forKey: .mediaControls) ?? mediaControls
         mediaSeek = try c.decodeIfPresent(Bool.self, forKey: .mediaSeek) ?? mediaSeek
@@ -188,6 +191,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     }
 
     public mutating func normalize() {
+        if !quickCaptureModifiers.isValid { quickCaptureModifiers = QuickCaptureModifiers(trigger: triggerModifier) }
         if !Self.frameRates.contains(defaultFPS) { defaultFPS = 10 }
         appFrameRates = appFrameRates.filter { Self.frameRates.contains($0.value) }
         preferredWidth = preferredWidth.isFinite ? min(1600, max(160, preferredWidth)) : 360

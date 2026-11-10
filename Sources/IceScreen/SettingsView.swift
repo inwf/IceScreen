@@ -238,9 +238,22 @@ struct SettingsView: View {
                 Picker("触发修饰键", selection: $store.value.triggerModifier) {
                     ForEach(TriggerModifier.allCases, id: \.self) { Text($0.display).tag($0) }
                 }
-                Toggle("按住修饰键并双击来源窗口，快速捕获局部区域", isOn: $store.value.quickRegionCapture)
             } header: { Text("修饰键手势") } footer: {
                 Text("轻按 \(store.value.triggerModifier.display) 隐藏或恢复浮窗，双击切换自动隐藏。系统设置 → 键盘可将 fn / 地球键设为「不执行操作」。")
+            }
+            Section {
+                Toggle("快速捕获局部区域", isOn: $store.value.quickRegionCapture)
+                HStack {
+                    Text("捕获手势")
+                    Spacer()
+                    QuickCaptureRecorder(modifiers: $store.value.quickCaptureModifiers, monitor: model.hotkeys)
+                        .frame(width: 210, height: 28)
+                        .disabled(!store.value.quickRegionCapture)
+                }
+                Button("恢复默认捕获手势") { store.value.quickCaptureModifiers = .function }
+                    .controlSize(.small)
+            } header: { Text("快速局部捕获") } footer: {
+                Text("点击捕获手势，按住需要的修饰键组合后全部松开保存，例如 ⌘⇧。在来源窗口中按住该组合并双击即可捕获；只有完整匹配的组合才会拦截点击。匹配组合的单击会等待系统双击判定后送达，拖动立即放行。")
             }
             Section {
                 DisclosureGroup("查看浮窗操作速查") {
@@ -357,14 +370,37 @@ struct ShortcutRecorder: NSViewRepresentable {
     static func dismantleNSView(_ view: ShortcutButton, coordinator: ()) { view.finishRecording() }
 }
 
+struct QuickCaptureRecorder: NSViewRepresentable {
+    @Binding var modifiers: QuickCaptureModifiers
+    let monitor: HotkeyMonitor
+    func makeNSView(context: Context) -> ShortcutButton {
+        let view = ShortcutButton(frame: .zero)
+        view.modifierOnly = true
+        return view
+    }
+    func updateNSView(_ view: ShortcutButton, context: Context) {
+        let title = "\(modifiers.display) + 双击"
+        if !view.recording { view.title = title }
+        view.savedTitle = title
+        view.onRecordModifiers = { modifiers = $0 }
+        view.onRecording = { monitor.recording = $0 }
+        view.setAccessibilityLabel("编辑快速捕获手势")
+        view.setAccessibilityValue(title)
+    }
+    static func dismantleNSView(_ view: ShortcutButton, coordinator: ()) { view.finishRecording() }
+}
+
 final class ShortcutButton: NSButton {
     var onRecord: ((Shortcut) -> Void)?
+    var onRecordModifiers: ((QuickCaptureModifiers) -> Void)?
+    var modifierOnly = false
     var onRecording: ((Bool) -> Void)?
     var validate: ((Shortcut) -> String?)?
     var savedTitle = ""
     private(set) var recording = false
     private var eventMonitor: Any?
     private var observer: NSObjectProtocol?
+    private var modifierRecording = ModifierChordRecording()
     override var acceptsFirstResponder: Bool { true }
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -378,8 +414,10 @@ final class ShortcutButton: NSButton {
         window?.makeFirstResponder(self)
         recording = true
         onRecording?(true)
-        title = "按下快捷键 · Esc 取消"
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        modifierRecording.reset()
+        title = modifierOnly ? "按住组合后松开 · Esc 取消" : "按下快捷键 · Esc 取消"
+        let mask: NSEvent.EventTypeMask = modifierOnly ? [.keyDown, .flagsChanged] : .keyDown
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self, self.recording else { return event }
             self.capture(event)
             return nil
@@ -390,6 +428,7 @@ final class ShortcutButton: NSButton {
     }
 
     func finishRecording() {
+        modifierRecording.reset()
         recording = false
         onRecording?(false)
         title = savedTitle
@@ -408,8 +447,26 @@ final class ShortcutButton: NSButton {
     }
 
     private func capture(_ event: NSEvent) {
-        if event.keyCode == 53 { finishRecording(); return }
+        if event.type == .keyDown && event.keyCode == 53 { finishRecording(); return }
         let flags = event.modifierFlags
+        if modifierOnly {
+            guard event.type == .flagsChanged else {
+                modifierRecording.rejectUntilRelease()
+                title = "仅使用修饰键 · Esc 取消"
+                return
+            }
+            let held = QuickCaptureModifiers(command: flags.contains(.command), option: flags.contains(.option),
+                                             control: flags.contains(.control), shift: flags.contains(.shift),
+                                             function: flags.contains(.function))
+            if let value = modifierRecording.update(held) {
+                savedTitle = "\(value.display) + 双击"
+                onRecordModifiers?(value)
+                finishRecording()
+            } else if !modifierRecording.candidate.isEmpty {
+                title = "\(modifierRecording.candidate.display) + 双击 · 松开保存"
+            }
+            return
+        }
         guard !flags.intersection([.command, .control, .option, .function, .shift]).isEmpty else {
             title = "请同时按住修饰键"; return
         }

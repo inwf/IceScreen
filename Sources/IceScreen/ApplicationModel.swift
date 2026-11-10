@@ -64,6 +64,13 @@ final class ApplicationModel: ObservableObject {
         hotkeys.regionShortcut = settings.value.effectiveRegionShortcut
         hotkeys.closeAllShortcut = settings.value.closeAllShortcut
         hotkeys.quickRegionCapture = settings.value.quickRegionCapture
+        hotkeys.quickCaptureModifiers = settings.value.quickCaptureModifiers
+        hotkeys.canQuickCapture = { point in
+            guard let screen = NSScreen.screens.first else { return false }
+            let location = NSPoint(x: point.x, y: screen.frame.maxY - point.y)
+            let number = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0)
+            return !NSApp.windows.contains { $0.windowNumber == number }
+        }
         hotkeys.triggerModifier = settings.value.triggerModifier
         hotkeys.onCapture = { [weak self] region in self?.captureFocused(region: region) }
         hotkeys.onQuickRegion = { [weak self] point in self?.quickCapture(at: point) }
@@ -111,6 +118,7 @@ final class ApplicationModel: ObservableObject {
             self.hotkeys.regionShortcut = value.effectiveRegionShortcut
             self.hotkeys.closeAllShortcut = value.closeAllShortcut
             self.hotkeys.quickRegionCapture = value.quickRegionCapture
+            self.hotkeys.quickCaptureModifiers = value.quickCaptureModifiers
             if previous.triggerModifier != value.triggerModifier { self.hotkeys.triggerModifier = value.triggerModifier }
             if !value.quickLook { self.preview.close() }
             if previous.mediaSpace != value.mediaSpace { self.preview.close() }

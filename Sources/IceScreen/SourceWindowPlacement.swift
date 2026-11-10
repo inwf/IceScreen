@@ -3,6 +3,7 @@ import AppKit
 import ApplicationServices
 import ScreenCaptureKit
 import IceCore
+import OSLog
 
 struct WindowPlacementRecord: Codable {
     var id: CGWindowID
@@ -10,11 +11,14 @@ struct WindowPlacementRecord: Codable {
     var launchedAt: Date
     var original: CGRect
     var parked: CGRect
+    var moving: Bool?
 }
 
 @MainActor
 final class SourceWindowPlacement {
     private var records: [CGWindowID: WindowPlacementRecord] = [:]
+    private var pending: [CGWindowID: UUID] = [:]
+    private static let log = Logger(subsystem: "org.icescreen.app", category: "SourcePlacement")
     private var watcher: Process?
     private var lifetime: FileHandle?
     private let journal: URL
@@ -32,7 +36,8 @@ final class SourceWindowPlacement {
     init() { journal = Self.directory.appendingPathComponent(UUID().uuidString + ".json") }
     func isParked(_ id: CGWindowID) -> Bool { records[id] != nil }
 
-    func park(_ source: SCWindow) throws {
+    func park(_ source: SCWindow) async throws {
+        try Task.checkCancellation()
         guard records[source.windowID] == nil, let pid = source.owningApplication?.processID,
               let app = NSRunningApplication(processIdentifier: pid), let launchedAt = app.launchDate else { return }
         guard AXIsProcessTrusted() else { throw RequestError.message("移走来源窗口需要辅助功能权限。") }
@@ -48,35 +53,62 @@ final class SourceWindowPlacement {
             throw RequestError.message("来源应用不允许移动这个窗口。")
         }
         let original = try Self.frame(target)
-        guard let destination = SourcePlacement.parkedFrame(original, screens: Self.screens) else { return }
+        let destinations = SourcePlacement.parkingDestinations(original, screens: Self.screens)
+        guard let destination = destinations.first else { throw RequestError.message("没有可用的屏幕外位置。") }
         try ensureWatcher()
-        records[source.windowID] = .init(id: source.windowID, pid: pid, launchedAt: launchedAt, original: original, parked: destination)
-        try persist()
+        let token = UUID()
+        pending[source.windowID] = token
+        defer { if pending[source.windowID] == token { pending[source.windowID] = nil } }
+        records[source.windowID] = .init(id: source.windowID, pid: pid, launchedAt: launchedAt,
+                                         original: original, parked: destination, moving: true)
         do {
-            try Self.position(target, destination.origin)
-            let actual = try Self.frame(target)
-            guard SourcePlacement.visibleArea(actual, screens: Self.screens) <= max(actual.height, actual.width) * 4 else {
-                throw RequestError.message("来源应用限制了窗口位置，已保留在屏幕内。")
+            for destination in destinations {
+                try Task.checkCancellation()
+                guard pending[source.windowID] == token else { throw CancellationError() }
+                records[source.windowID]?.parked = destination
+                try persist()
+                try Self.position(target, destination.origin)
+                // AX 写入成功只表示请求已接收；等 AX 与 WindowServer 都显示移位结果。
+                let deadline = ContinuousClock.now.advanced(by: .milliseconds(500))
+                var confirmedSamples = 0
+                while ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(40))
+                    guard pending[source.windowID] == token else { throw CancellationError() }
+                    let actual = try Self.frame(target)
+                    let rendered = Self.serverFrame(source.windowID)
+                    let confirmed = SourcePlacement.isOutsideDisplays(actual, screens: Self.screens)
+                        && rendered.map { SourcePlacement.isOutsideDisplays($0, screens: Self.screens)
+                            && SourcePlacement.isParked($0, at: actual) } == true
+                    confirmedSamples = confirmed ? confirmedSamples + 1 : 0
+                    if confirmedSamples >= 2 {
+                        records[source.windowID]?.parked = actual
+                        records[source.windowID]?.moving = false
+                        try persist()
+                        onParked?(source.windowID, true)
+                        return
+                    }
+                }
+                let actual = try Self.frame(target)
+                Self.log.debug("Window \(source.windowID) placement constrained: requested \(String(describing: destination.origin), privacy: .public), actual \(String(describing: actual.origin), privacy: .public)")
             }
-            records[source.windowID]?.parked = actual
-            try persist()
-            onParked?(source.windowID, true)
+            throw RequestError.message("系统未能移走来源窗口，已恢复原位置。浮窗可以继续使用。")
         } catch {
-            try restore(source.windowID, force: true)
+            if pending[source.windowID] == token { try restore(source.windowID, force: true) }
             throw error
         }
     }
 
     func restore(_ id: CGWindowID, force: Bool = false) throws {
+        let wasMoving = pending.removeValue(forKey: id) != nil
         guard let record = records[id] else { return }
-        try Self.restoreRecord(record, force: force)
+        try Self.restoreRecord(record, force: force || wasMoving)
         records[id] = nil
         try persist()
         onParked?(id, false)
     }
 
     func refresh() {
-        for record in Array(records.values) {
+        for record in Array(records.values) where pending[record.id] == nil {
             do {
                 guard let app = NSRunningApplication(processIdentifier: record.pid), app.launchDate == record.launchedAt else {
                     records[record.id] = nil; try persist(); onParked?(record.id, false); continue
@@ -90,6 +122,12 @@ final class SourceWindowPlacement {
                 }
             } catch { onError?(error.localizedDescription) }
         }
+    }
+    private static func serverFrame(_ id: CGWindowID) -> CGRect? {
+        guard let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]],
+              let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == id }),
+              let bounds = entry[kCGWindowBounds as String] as? [String: Any] else { return nil }
+        return CGRect(dictionaryRepresentation: bounds as CFDictionary)
     }
     func restoreAll() {
         for id in Array(records.keys) {
@@ -160,7 +198,7 @@ final class SourceWindowPlacement {
         guard entries.contains(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == record.id }) else { return }
         let target = try element(pid: record.pid, id: record.id)
         let current = try frame(target)
-        guard force || SourcePlacement.isParked(current, at: record.parked)
+        guard force || record.moving == true || SourcePlacement.isParked(current, at: record.parked)
                 || SourcePlacement.visibleArea(current, screens: screens) == 0 else { return }
         let destination = SourcePlacement.restoredFrame(record.original, screens: screens)
         if destination.size != current.size {

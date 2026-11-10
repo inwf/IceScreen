@@ -57,6 +57,7 @@ final class ApplicationModel: ObservableObject {
     private weak var lastHidden: CaptureSession?
     private var captureGeneration = 0
     private var captureTasks: [UUID: Task<Void, Never>] = [:]
+    private var placementTasks: [CGWindowID: (token: UUID, task: Task<Void, Never>)] = [:]
     private var selectionTask: Task<Void, Never>?
 
     init() {
@@ -122,7 +123,11 @@ final class ApplicationModel: ObservableObject {
             if previous.moveSourceOffscreen != value.moveSourceOffscreen {
                 if value.moveSourceOffscreen {
                     for session in self.sessions where session.hasCapturedFrame { self.parkSource(session) }
-                } else { self.placement.restoreAll() }
+                } else {
+                    self.placementTasks.values.forEach { $0.task.cancel() }
+                    self.placementTasks.removeAll()
+                    self.placement.restoreAll()
+                }
             }
             for session in self.sessions {
                 session.applyPreferences(value)
@@ -154,6 +159,7 @@ final class ApplicationModel: ObservableObject {
                     self.placement.refresh()
                     let focusedID = SourceFocusMonitor.focusedWindowID(app.processIdentifier)
                     for session in self.sessions where session.source.windowID == focusedID {
+                        self.cancelParking(session.source.windowID)
                         if self.placement.isParked(session.source.windowID) {
                             do { try self.placement.restore(session.source.windowID) }
                             catch { session.showHint(error.localizedDescription) }
@@ -309,6 +315,7 @@ final class ApplicationModel: ObservableObject {
         let session = CaptureSession(source: source, viewport: viewport, preferences: settings.value, offset: sessions.count)
         session.onClose = { [weak self] value in
             guard let self else { return }
+            self.cancelParking(value.source.windowID)
             do { try self.placement.restore(value.source.windowID) }
             catch { self.error = error.localizedDescription }
             if self.preview.sourceID == value.source.windowID { self.preview.close() }
@@ -318,6 +325,7 @@ final class ApplicationModel: ObservableObject {
         }
         session.onFocus = { [weak self] source in
             guard let self else { throw CancellationError() }
+            self.cancelParking(source.windowID)
             try self.placement.restore(source.windowID)
             try await self.catalog.focus(source)
         }
@@ -453,9 +461,24 @@ final class ApplicationModel: ObservableObject {
     }
 
     private func parkSource(_ session: CaptureSession) {
-        guard !session.stageInactive else { return }
-        do { try placement.park(session.source) }
-        catch { session.showHint(error.localizedDescription) }
+        let id = session.source.windowID
+        guard !session.stageInactive, placementTasks[id] == nil else { return }
+        let token = UUID()
+        let task = Task { [weak self, weak session] in
+            guard let self, let session else { return }
+            defer { if self.placementTasks[id]?.token == token { self.placementTasks[id] = nil } }
+            guard !Task.isCancelled, self.settings.value.moveSourceOffscreen, !session.stageInactive,
+                  self.sessions.contains(where: { $0.id == session.id }) else { return }
+            do { try await self.placement.park(session.source) }
+            catch {
+                if !(error is CancellationError) { session.showHint(error.localizedDescription) }
+            }
+        }
+        placementTasks[id] = (token, task)
+    }
+
+    private func cancelParking(_ id: CGWindowID) {
+        placementTasks.removeValue(forKey: id)?.task.cancel()
     }
 
     private var stageRefreshTask: Task<Void, Never>?

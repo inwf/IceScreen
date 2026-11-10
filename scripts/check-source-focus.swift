@@ -11,7 +11,7 @@ enum SourceFocusChecks {
         if arguments.count == 2, arguments[0] == "--watch-source-windows" {
             SourceWindowPlacement.watch(arguments[1]); return
         }
-        if arguments.count == 2, arguments[0] == "--park-and-crash" {
+        if arguments.count == 2, ["--park-and-crash", "--park-during-crash"].contains(arguments[0]) {
             app.setActivationPolicy(.accessory); app.finishLaunching()
             Task { @MainActor in
                 let catalog = WindowCatalog()
@@ -19,7 +19,13 @@ enum SourceFocusChecks {
                 guard let source = catalog.windows.first(where: { String($0.windowID) == arguments[1] }) else { exit(70) }
                 do {
                     let placement = SourceWindowPlacement()
-                    try placement.park(source)
+                    if arguments[0] == "--park-during-crash" {
+                        Task { @MainActor in
+                            do { try await placement.park(source) }
+                            catch { fputs("\(error)\n", stderr); exit(71) }
+                        }
+                        try await wait { placement.isParked(source.windowID) }
+                    } else { try await placement.park(source) }
                     raise(SIGKILL)
                 } catch { fputs("\(error)\n", stderr); exit(71) }
             }
@@ -131,7 +137,11 @@ enum SourceFocusChecks {
         let original = try SourceWindowPlacement.frame(target)
         placement.onParked = { _, parked in session.sourceParked = parked }
         session.onPark = {
-            do { try placement.park(source) } catch { fatalError("Parking failed: \(error)") }
+            Task { @MainActor in
+                do { try await placement.park(source) }
+                catch is CancellationError { }
+                catch { fatalError("Parking failed: \(error)") }
+            }
         }
         session.onFocus = { window in
             try placement.restore(window.windowID)
@@ -142,8 +152,10 @@ enum SourceFocusChecks {
             do { try placement.restore(value.source.windowID) } catch { fatalError("Restoration failed: \(error)") }
         }
         preferences.moveSourceOffscreen = true; session.applyPreferences(preferences)
-        try placement.park(source)
+        try await placement.park(source)
         precondition(placement.isParked(source.windowID) && session.sourceParked)
+        let parked = try SourceWindowPlacement.frame(target)
+        precondition(SourcePlacement.isOutsideDisplays(parked, screens: SourceWindowPlacement.screens))
         let expected = confirmations + 1
         click(session)
         try await wait { confirmations == expected }
@@ -151,16 +163,37 @@ enum SourceFocusChecks {
         let restored = try SourceWindowPlacement.frame(target)
         precondition(restored.origin == original.origin)
         click(session)
+        try await wait { session.sourceParked }
         precondition(placement.isParked(source.windowID), "The next click must put the recalled source away.")
         try placement.restore(source.windowID)
-
-        let crashing = Process()
-        crashing.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        crashing.arguments = ["--park-and-crash", String(source.windowID)]
-        try crashing.run()
-        try await wait { !crashing.isRunning }
-        precondition(crashing.terminationReason == .uncaughtSignal && crashing.terminationStatus == SIGKILL)
         try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
+
+        // 在真实移位等待期间恢复窗口，旧任务不得再次把它移走。
+        let interrupted = Task { @MainActor in try await placement.park(source) }
+        try await wait { placement.isParked(source.windowID) }
+        try placement.restore(source.windowID)
+        var cancelled = false
+        do { try await interrupted.value } catch is CancellationError { cancelled = true }
+        precondition(cancelled && !placement.isParked(source.windowID) && !session.sourceParked)
+        try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
+
+        let cancelledTask = Task { @MainActor in try await placement.park(source) }
+        try await wait { placement.isParked(source.windowID) }
+        cancelledTask.cancel()
+        do { try await cancelledTask.value; preconditionFailure("Cancelled movement must not complete.") }
+        catch is CancellationError { }
+        precondition(!placement.isParked(source.windowID) && !session.sourceParked)
+        try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
+
+        for mode in ["--park-and-crash", "--park-during-crash"] {
+            let crashing = Process()
+            crashing.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+            crashing.arguments = [mode, String(source.windowID)]
+            try crashing.run()
+            try await wait { !crashing.isRunning }
+            precondition(crashing.terminationReason == .uncaughtSignal && crashing.terminationStatus == SIGKILL)
+            try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
+        }
 
         try await catalog.focus(other)
         click(session)

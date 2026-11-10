@@ -2,9 +2,41 @@ import Foundation
 
 public enum SourcePlacement {
     public static func parkedFrame(_ frame: CGRect, screens: [CGRect]) -> CGRect? {
-        guard let left = screens.map(\.minX).min(), !screens.isEmpty, frame.width > 0, frame.height > 0 else { return nil }
-        // 横向移出所有屏幕，保留纵向位置，避免 macOS 将标题栏重新约束到桌面。
-        return CGRect(x: left - frame.width - 8, y: frame.minY, width: frame.width, height: frame.height)
+        parkingDestinations(frame, screens: screens).first
+    }
+    public static func parkingDestinations(_ frame: CGRect, screens: [CGRect]) -> [CGRect] {
+        guard valid(frame) else { return [] }
+        let displays = screens.filter(valid).sorted {
+            let lhs = intersectionArea(frame, $0), rhs = intersectionArea(frame, $1)
+            if lhs != rhs { return lhs > rhs }
+            return hypot(frame.midX - $0.midX, frame.midY - $0.midY) < hypot(frame.midX - $1.midX, frame.midY - $1.midY)
+        }
+        var result: [CGRect] = []
+        for screen in displays {
+            // 优先同时越过水平和下方边界，让标题栏也离开显示区域。
+            let origins = [CGPoint(x: screen.maxX + 10, y: screen.maxY + 10),
+                           CGPoint(x: screen.minX - frame.width - 10, y: screen.maxY + 10),
+                           CGPoint(x: max(screen.minX, min(frame.minX, screen.maxX - frame.width)), y: screen.maxY + 10)]
+            for origin in origins {
+                let destination = CGRect(origin: origin, size: frame.size)
+                if valid(destination), visibleArea(destination, screens: displays) == 0, !result.contains(destination) {
+                    result.append(destination)
+                }
+            }
+        }
+        return result
+    }
+    public static func isOutsideDisplays(_ frame: CGRect, screens: [CGRect]) -> Bool {
+        guard valid(frame), !screens.isEmpty, screens.allSatisfy(valid) else { return false }
+        return screens.allSatisfy {
+            let overlap = frame.intersection($0)
+            return overlap.isNull || overlap.width <= 2 || overlap.height <= 2
+        }
+    }
+    private static func valid(_ frame: CGRect) -> Bool {
+        !frame.isNull && !frame.isInfinite && !frame.isEmpty
+            && [frame.minX, frame.minY, frame.width, frame.height, frame.maxX, frame.maxY].allSatisfy(\.isFinite)
+            && frame.width > 0 && frame.height > 0
     }
     public static func restoredFrame(_ original: CGRect, screens: [CGRect]) -> CGRect {
         let desktop = screens.reduce(CGRect.null) { $0.union($1) }

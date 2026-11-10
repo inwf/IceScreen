@@ -57,7 +57,7 @@ final class RegionSurface: NSView {
         if let selection {
             NSColor.clear.setFill()
             selection.fill(using: .copy)
-            NSColor.systemTeal.setStroke()
+            CaptureSelectionStyle.color.setStroke()
             let border = NSBezierPath(rect: selection)
             border.lineWidth = 2
             border.stroke()

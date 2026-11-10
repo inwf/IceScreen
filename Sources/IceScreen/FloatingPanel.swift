@@ -52,7 +52,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private var shouldParkOnFirstFrame = true
     var sourceParked = false {
         didSet {
-            if sourceParked { sourcePaused = false }
+            if sourceParked { sourcePaused = false; sourceWasRecalled = false }
             if oldValue && !sourceParked { sourceWasRecalled = true }
             syncRunning(); updateStatus()
         }
@@ -295,7 +295,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         guard clickToFocus, !closed else { return }
         if moveSourceOffscreen && sourceWasRecalled && !sourceParked && focusTask == nil && onPark != nil {
             onPark?()
-            if sourceParked { sourceWasRecalled = false }
             return
         }
         focusSource()
@@ -897,8 +896,8 @@ final class PanelInput: NSControl {
     }
     override func draw(_ dirtyRect: NSRect) {
         if let selection {
-            NSColor.systemMint.withAlphaComponent(0.18).setFill(); selection.fill()
-            NSColor.systemMint.setStroke(); NSBezierPath(rect: selection).stroke()
+            CaptureSelectionStyle.color.withAlphaComponent(0.18).setFill(); selection.fill()
+            CaptureSelectionStyle.color.setStroke(); NSBezierPath(rect: selection).stroke()
         }
     }
 }

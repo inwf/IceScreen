@@ -19,11 +19,22 @@ final class MediaPlaybackTests: XCTestCase {
     }
     func testNewSettingsMigrateAndPersistExplicitChoices() throws {
         let legacy = try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8))
-        XCTAssertTrue(legacy.mediaControls && legacy.mediaSeek && legacy.mediaSpace && legacy.smartRegionCapture && legacy.moveSourceOffscreen)
+        XCTAssertTrue(legacy.mediaControls && legacy.mediaSeek && legacy.mediaSpace && legacy.smartRegionCapture)
         var changed = legacy
         changed.mediaControls = false; changed.mediaSeek = false; changed.mediaSpace = false
-        changed.smartRegionCapture = false; changed.moveSourceOffscreen = false
+        changed.smartRegionCapture = false
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(changed)), changed)
+    }
+    func testLegacyPreferencesPreserveCaptureAndAppearanceSettings() throws {
+        let data = Data(#"{"moveSourceOffscreen":true,"clickToFocus":false,"panelOpacity":0.73,"smartRegionCapture":false}"#.utf8)
+        let preferences = try JSONDecoder().decode(Preferences.self, from: data)
+        XCTAssertFalse(preferences.clickToFocus)
+        XCTAssertFalse(preferences.smartRegionCapture)
+        XCTAssertEqual(preferences.panelOpacity, 0.73)
+        let encoded = try JSONEncoder().encode(preferences)
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNil(saved["moveSourceOffscreen"])
+        XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: encoded), preferences)
     }
     func testMatchingNeverChoosesUnrelatedOrAmbiguousPlayer() {
         let values = [track(), track("other", pid: 43, bundle: "org.other")]

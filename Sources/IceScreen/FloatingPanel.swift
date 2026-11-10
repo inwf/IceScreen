@@ -46,20 +46,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var onResize: ((Double) -> Void)?
     var onChange: (() -> Void)?
     var onMedia: ((MediaRequest) -> Void)?
-    var onCaptureReady: (() -> Void)?
-    var onPark: (() -> Void)?
     private(set) var hasCapturedFrame = false
-    private var shouldParkOnFirstFrame = true
-    var sourceParked = false {
-        didSet {
-            if sourceParked { sourcePaused = false; sourceWasRecalled = false }
-            if oldValue && !sourceParked { sourceWasRecalled = true }
-            syncRunning(); updateStatus()
-        }
-    }
     private(set) var stageInactive = false
-    private var moveSourceOffscreen = true
-    private var sourceWasRecalled = false
     private(set) var mediaSnapshot: MediaSnapshot?
     private var mediaEnabled = true
     private(set) var mediaSeekEnabled = true
@@ -147,8 +135,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
                 DispatchQueue.main.async { [weak self] in
                     guard let self, !self.closed else { return }
                     self.refreshSourceState()
-                    if self.shouldParkOnFirstFrame { self.onCaptureReady?() }
-                    self.shouldParkOnFirstFrame = false
                 }
             }
         }
@@ -243,8 +229,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         idleSeconds = value.idleSeconds
         changeSeconds = value.changeSeconds
         clickToFocus = value.clickToFocus
-        moveSourceOffscreen = value.moveSourceOffscreen
-        if !value.moveSourceOffscreen { sourceWasRecalled = false }
         mediaEnabled = value.mediaControls
         mediaSeekEnabled = value.mediaSeek
         if !mediaEnabled { mediaSnapshot = nil }
@@ -285,7 +269,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         let focused = windowID == source.windowID
         if !focused && focusTask == nil { preserveOnSourceFocus = false }
         if focused && behavior == .close && !preserveOnSourceFocus { close(); return }
-        sourcePaused = focused && behavior == .pause && !sourceParked
+        sourcePaused = focused && behavior == .pause
         syncRunning()
         updateStatus()
     }
@@ -293,10 +277,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     func clicked() {
         Self.interactionLog.debug("Content click: enabled=\(self.clickToFocus), closed=\(self.closed)")
         guard clickToFocus, !closed else { return }
-        if moveSourceOffscreen && sourceWasRecalled && !sourceParked && focusTask == nil && onPark != nil {
-            onPark?()
-            return
-        }
         focusSource()
     }
 
@@ -351,7 +331,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
     private func requestFocus(closeAfter: Bool) {
         guard !closed, let onFocus else { return }
-        shouldParkOnFirstFrame = false
         preserveOnSourceFocus = true
         closeAfterFocus = closeAfterFocus || closeAfter
         guard focusTask == nil else { return }
@@ -363,7 +342,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             do {
                 try await onFocus(self.source)
                 try Task.checkCancellation()
-                self.sourceWasRecalled = true
                 self.refreshSourceState()
                 Self.interactionLog.debug("Source window focus confirmed")
                 if self.closeAfterFocus { self.close() }
@@ -459,18 +437,18 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
               let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), frame.width > 0, frame.height > 0 else { return }
         let enabled = (CFPreferencesCopyAppValue("GloballyEnabled" as CFString, "com.apple.WindowManager" as CFString) as? Bool) == true
         var fullSize = sourceSize
-        let possibleThumbnail = enabled && !sourceParked && StageManagerGeometry.isThumbnailShape(frame, screens: SourceWindowPlacement.screens)
+        let possibleThumbnail = enabled && StageManagerGeometry.isThumbnailShape(frame, screens: SourceWindowRecovery.screens)
         if possibleThumbnail, let pid = source.owningApplication?.processID {
             do {
-                let element = try SourceWindowPlacement.element(pid: pid, id: source.windowID)
-                fullSize = try SourceWindowPlacement.frame(element).size
+                let element = try SourceWindowRecovery.element(pid: pid, id: source.windowID)
+                fullSize = try SourceWindowRecovery.frame(element).size
             } catch {
                 fullSize = frame.size
                 Self.interactionLog.debug("Stage geometry unavailable: \(error.localizedDescription, privacy: .public)")
             }
         }
         let inactive = StageManagerGeometry.isInactive(enabled: enabled, frame: frame, fullSize: fullSize,
-                                                      screens: SourceWindowPlacement.screens, intentionallyParked: sourceParked)
+                                                      screens: SourceWindowRecovery.screens)
         if stageInactive != inactive {
             stageInactive = inactive
             syncRunning()

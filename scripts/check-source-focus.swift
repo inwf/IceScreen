@@ -8,29 +8,6 @@ enum SourceFocusChecks {
     @MainActor static func main() {
         let app = NSApplication.shared
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments.count == 2, arguments[0] == "--watch-source-windows" {
-            SourceWindowPlacement.watch(arguments[1]); return
-        }
-        if arguments.count == 2, ["--park-and-crash", "--park-during-crash"].contains(arguments[0]) {
-            app.setActivationPolicy(.accessory); app.finishLaunching()
-            Task { @MainActor in
-                let catalog = WindowCatalog()
-                await catalog.refresh()
-                guard let source = catalog.windows.first(where: { String($0.windowID) == arguments[1] }) else { exit(70) }
-                do {
-                    let placement = SourceWindowPlacement()
-                    if arguments[0] == "--park-during-crash" {
-                        Task { @MainActor in
-                            do { try await placement.park(source) }
-                            catch { fputs("\(error)\n", stderr); exit(71) }
-                        }
-                        try await wait { placement.isParked(source.windowID) }
-                    } else { try await placement.park(source) }
-                    raise(SIGKILL)
-                } catch { fputs("\(error)\n", stderr); exit(71) }
-            }
-            app.run(); return
-        }
         if arguments.first == "--fixture" {
             app.setActivationPolicy(.regular)
             app.finishLaunching()
@@ -88,7 +65,8 @@ enum SourceFocusChecks {
         var preferences = Preferences()
         preferences.autoHide = false
         preferences.clickToFocus = true
-        preferences.moveSourceOffscreen = false
+        let capturedTarget = try SourceWindowRecovery.element(pid: sourceApp.processIdentifier, id: source.windowID)
+        let original = try SourceWindowRecovery.frame(capturedTarget)
         let session = CaptureSession(source: source, viewport: .full, preferences: preferences, offset: 0)
         defer { session.close() }
         var confirmations = 0
@@ -96,8 +74,11 @@ enum SourceFocusChecks {
             try await catalog.focus(window)
             confirmations += 1
         }
-        session.panel.orderFrontRegardless()
+        session.start()
         session.surface.layoutSubtreeIfNeeded()
+        try await wait { session.hasCapturedFrame }
+        let afterCapture = try SourceWindowRecovery.frame(capturedTarget)
+        precondition(afterCapture == original, "Capturing must preserve the source window frame.")
         try await catalog.focus(other)
         precondition(!NSApp.isActive && !session.panel.isKeyWindow, "The content click must originate in a background panel.")
 
@@ -132,67 +113,13 @@ enum SourceFocusChecks {
         try await wait { confirmations == before + 1 }
         precondition(sourceApp.isActive && focusedTitle(sourceApp) == source.title, "A minimized or hidden source must be restored.")
 
-        let placement = SourceWindowPlacement()
-        defer { placement.shutdown() }
-        let original = try SourceWindowPlacement.frame(target)
-        placement.onParked = { _, parked in session.sourceParked = parked }
-        session.onPark = {
-            Task { @MainActor in
-                do { try await placement.park(source) }
-                catch is CancellationError { }
-                catch { fatalError("Parking failed: \(error)") }
-            }
-        }
-        session.onFocus = { window in
-            try placement.restore(window.windowID)
-            try await catalog.focus(window)
-            confirmations += 1
-        }
-        session.onClose = { value in
-            do { try placement.restore(value.source.windowID) } catch { fatalError("Restoration failed: \(error)") }
-        }
-        preferences.moveSourceOffscreen = true; session.applyPreferences(preferences)
-        try await placement.park(source)
-        precondition(placement.isParked(source.windowID) && session.sourceParked)
-        let parked = try SourceWindowPlacement.frame(target)
-        precondition(SourcePlacement.isOutsideDisplays(parked, screens: SourceWindowPlacement.screens))
-        let expected = confirmations + 1
-        click(session)
-        try await wait { confirmations == expected }
-        precondition(!placement.isParked(source.windowID))
-        let restored = try SourceWindowPlacement.frame(target)
-        precondition(restored.origin == original.origin)
-        click(session)
-        try await wait { session.sourceParked }
-        precondition(placement.isParked(source.windowID), "The next click must put the recalled source away.")
-        try placement.restore(source.windowID)
-        try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
-
-        // 在真实移位等待期间恢复窗口，旧任务不得再次把它移走。
-        let interrupted = Task { @MainActor in try await placement.park(source) }
-        try await wait { placement.isParked(source.windowID) }
-        try placement.restore(source.windowID)
-        var cancelled = false
-        do { try await interrupted.value } catch is CancellationError { cancelled = true }
-        precondition(cancelled && !placement.isParked(source.windowID) && !session.sourceParked)
-        try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
-
-        let cancelledTask = Task { @MainActor in try await placement.park(source) }
-        try await wait { placement.isParked(source.windowID) }
-        cancelledTask.cancel()
-        do { try await cancelledTask.value; preconditionFailure("Cancelled movement must not complete.") }
-        catch is CancellationError { }
-        precondition(!placement.isParked(source.windowID) && !session.sourceParked)
-        try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
-
-        for mode in ["--park-and-crash", "--park-during-crash"] {
-            let crashing = Process()
-            crashing.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-            crashing.arguments = [mode, String(source.windowID)]
-            try crashing.run()
-            try await wait { !crashing.isRunning }
-            precondition(crashing.terminationReason == .uncaughtSignal && crashing.terminationStatus == SIGKILL)
-            try await wait { (try? SourceWindowPlacement.frame(target).origin) == original.origin }
+        for _ in 0..<3 {
+            let expected = confirmations + 1
+            click(session)
+            try await wait { confirmations == expected }
+            let current = try SourceWindowRecovery.frame(target)
+            precondition(current == original && sourceApp.isActive && session.panel.isVisible,
+                         "Repeated single clicks must keep the source frame and retain the panel.")
         }
 
         try await catalog.focus(other)

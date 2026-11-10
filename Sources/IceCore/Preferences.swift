@@ -92,7 +92,6 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var regionShortcut: Shortcut?
     public var closeAllShortcut: Shortcut?
     public var clickToFocus = true
-    public var moveSourceOffscreen = true
     public var sourceFocusBehavior: SourceFocusBehavior = .keep
     public var showOnFullscreenSpaces = true
     public var quickRegionCapture = true
@@ -140,7 +139,6 @@ public struct Preferences: Codable, Equatable, Sendable {
         case contrastStrength, sharpnessStrength
         case smartRegionCapture
         case mediaControls, mediaSeek, mediaSpace
-        case moveSourceOffscreen
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,7 +164,6 @@ public struct Preferences: Codable, Equatable, Sendable {
         regionShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .regionShortcut)
         closeAllShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .closeAllShortcut)
         clickToFocus = try c.decodeIfPresent(Bool.self, forKey: .clickToFocus) ?? clickToFocus
-        moveSourceOffscreen = try c.decodeIfPresent(Bool.self, forKey: .moveSourceOffscreen) ?? moveSourceOffscreen
         sourceFocusBehavior = try c.decodeIfPresent(SourceFocusBehavior.self, forKey: .sourceFocusBehavior) ?? sourceFocusBehavior
         showOnFullscreenSpaces = try c.decodeIfPresent(Bool.self, forKey: .showOnFullscreenSpaces) ?? showOnFullscreenSpaces
         quickRegionCapture = try c.decodeIfPresent(Bool.self, forKey: .quickRegionCapture) ?? quickRegionCapture

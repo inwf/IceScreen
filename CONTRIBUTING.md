@@ -1,8 +1,8 @@
 # 参与开发
 
-IceScreen 使用 Swift Package Manager。修改前阅读 [实现说明](docs/architecture.md)，运行 `swift test`。macOS 相关改动还需执行 `bash scripts/build.sh`。输入与浮窗改动还需在 macOS 图形会话中运行 `bash scripts/check-panel-events.sh`。
+IceScreen 使用 Swift Package Manager。修改前阅读 README，运行 `swift test`。macOS 相关改动还需执行 `bash scripts/build.sh`。输入与浮窗改动还需在 macOS 图形会话中运行 `bash scripts/check-panel-events.sh`。
 
-检测命令相关改动还需运行 `python3 scripts/check-detection-command.py .build/debug/IceScreen`，验证真实命令执行和子进程清理。macOS 手动检查步骤见 [检查清单](docs/macos-checklist.md)。
+检测命令相关改动还需运行 `python3 scripts/check-detection-command.py .build/debug/IceScreen`，验证真实命令执行和子进程清理。
 
 安装窗口背景源文件为 `assets/dmg-background.svg`，执行 `uv run scripts/render-dmg-background.py` 生成已跟踪的 Retina TIFF；渲染环境需要可显示中文的字体。macOS 打包通过 Finder 设置窗口布局，验证挂载后的映像可执行 `uv run scripts/check-dmg-layout.py /Volumes/IceScreen`。
 

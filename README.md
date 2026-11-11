@@ -109,8 +109,6 @@ Music、TV、Spotify、Swinsian 和 VLC 通过应用自动化设置播放位置�
 - 内容检测每秒最多分析 32 × 32 个亮度采样，细微变化模式为 64 × 64；关闭时停止采样。
 - 图像增强使用 GPU 过滤器。需要最低功耗时，可以关闭图像增强和空闲检测。
 
-性能设计与实测状态见 [验证记录](docs/validation.md)。
-
 ## 内容检测
 
 在「检测与自动化」中分别配置空闲与变化检测。空闲检测在画面持续静止后提醒一次；变化检测在安静时间达到阈值后，下一次画面变化时提醒。细微变化模式适合加载指示器和小型进度条。浮窗菜单与 `D`、`C`、`S` 可以独立设置当前浮窗。
@@ -149,4 +147,4 @@ CONFIGURATION=debug bash scripts/build.sh
 
 `IceCore` 包含跨平台的坐标、命令行、偏好和空闲检测逻辑。Linux 可以运行 `swift test`；完整桌面应用的编译、签名和交互验证需要 macOS。
 
-参见 [功能清单](docs/features.md)、[实现说明](docs/architecture.md)、[验证记录](docs/validation.md)、[macOS 手动检查](docs/macos-checklist.md) 和 [贡献说明](CONTRIBUTING.md)。
+参见 [贡献说明](CONTRIBUTING.md)。

@@ -4,6 +4,7 @@ work/
 .build/
 .swiftpm/
 dist/
+docs/
 .DS_Store
 *.xcuserstate
 *.xcuserdatad/

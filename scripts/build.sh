@@ -15,13 +15,14 @@ export TMPDIR="$PWD/.build/tmp"
 configuration="${CONFIGURATION:-release}"
 signing_identity="${SIGN_IDENTITY:--}"
 app_dir="$PWD/dist/IceScreen.app"
-mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Contents/Frameworks" .build/iconset
 build_args=(-c "$configuration")
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
     build_args+=(--arch arm64 --arch x86_64)
 fi
 swift build "${build_args[@]}"
 binary_dir="$(swift build "${build_args[@]}" --show-bin-path)"
+rm -rf "$app_dir"
+mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Contents/Frameworks" .build/iconset
 cp "$binary_dir/IceScreen" "$app_dir/Contents/MacOS/IceScreen"
 cp Sources/IceScreen/Resources/Info.plist "$app_dir/Contents/Info.plist"
 cp LICENSE NOTICE "$app_dir/Contents/Resources/"
@@ -35,5 +36,6 @@ fi
 codesign --force --options runtime --sign "$signing_identity" "$app_dir/Contents/Frameworks/libIceMediaBridge.dylib"
 codesign --force --options runtime --entitlements Sources/IceScreen/Resources/IceScreen.entitlements --sign "$signing_identity" "$app_dir"
 codesign --verify --strict --verbose=2 "$app_dir"
+uv run scripts/check-app-icon.py "$app_dir" --iconset .build/iconset/AppIcon.iconset
 echo "Built $app_dir"
 bash scripts/package-dmg.sh

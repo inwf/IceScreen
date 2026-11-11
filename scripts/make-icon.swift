@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -36,3 +37,6 @@ for points in [16, 32, 128, 256, 512] {
     try renderIcon(size: points, name: "icon_\(points)x\(points).png")
     try renderIcon(size: points * 2, name: "icon_\(points)x\(points)@2x.png")
 }
+let sourceHash = SHA256.hash(data: try Data(contentsOf: input)).map { String(format: "%02x", $0) }.joined()
+try (sourceHash + "\n").write(to: output.deletingLastPathComponent().appendingPathComponent("AppIcon.source.sha256"),
+                             atomically: true, encoding: .utf8)

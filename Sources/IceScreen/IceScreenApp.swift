@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     init(initialRequest: CaptureRequest?) { self.initialRequest = initialRequest; super.init() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ApplicationIdentity.prepare()
         SourceWindowRecovery.recoverAbandoned()
         model = ApplicationModel()
         errorSubscription = model.$error.compactMap { $0 }.sink { [weak self] _ in

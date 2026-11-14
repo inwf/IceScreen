@@ -30,7 +30,23 @@ UNIVERSAL=1 bash scripts/build.sh
 bash scripts/package-dmg.sh
 ```
 
-构建脚本生成图标、应用包、本地签名和压缩 DMG，并执行映像校验。发布者可设置 `SIGN_IDENTITY` 使用自己的 Developer ID；公证需要发布者的 Apple 开发者凭据。CI 会编译、测试并保存通用应用 DMG 与 ZIP。
+构建脚本生成图标、应用包、本地签名和压缩 DMG，并执行映像校验。发布者可设置 `SIGN_IDENTITY` 使用自己的 Developer ID；公证需要发布者的 Apple 开发者凭据。
+
+## GitHub Actions 发布流程
+
+- 普通分支的 push 不触发工作流。
+- `main` 分支 push 执行测试、macOS 通用应用构建、DMG 和 ZIP 校验，并保留七天 Actions 构建产物。
+- Pull Request 只执行同样的检查，不发布版本。
+- 推送 `vX.Y.Z` 标签后，工作流先完成完整构建，再创建对应的 GitHub Release，上传通用 DMG、ZIP 和 `SHA256SUMS`。
+- Release 正文来自 `CHANGELOG.md` 中与标签版本对应的章节；版本标签必须和 `Info.plist` 中的版本一致。
+- Actions 页面手动运行时填写已有 `vX.Y.Z` 标签，可以重新构建并更新该 Release；留空只执行检查。
+
+发布一个新版本时，先更新 `Sources/IceScreen/Resources/Info.plist` 和 `CHANGELOG.md`，提交到 `main` 并确认主分支检查通过，再创建并推送对应标签：
+
+```bash
+git tag v1.2.5
+git push origin v1.2.5
+```
 
 应用图标原图为 `assets/AppIcon.png`。`scripts/make-icon.swift` 从原图生成 16–1024 像素的标准及 Retina 图标，供 Finder、程序坞、关于界面和 DMG 卷图标共用。菜单栏采用独立的冰淇淋轮廓模板图标，由系统适配深浅色。
 

@@ -38,8 +38,11 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@v6
-      - name: Check installation background typography
-        run: uv run scripts/render-dmg-background.py --check
+        with:
+          python-version: '3.12'
+          cache-dependency-glob: 'scripts/*.py'
+      - name: Test installation background generation and validation
+        run: uv run scripts/test-dmg-background.py
       - name: Select toolchain
         run: |
           xcodebuild -version

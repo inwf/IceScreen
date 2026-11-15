@@ -25,7 +25,7 @@ with DSStore.open(str(volume / ".DS_Store"), "r") as store:
     assert alias.target.posix_path == "/.background/dmg-background.tiff"
     assert alias.target.folder_cnid > 2 and alias.target.cnid > 2
 background = volume / ".background/dmg-background.tiff"
-assert hashlib.sha256(background.read_bytes()).digest() == hashlib.sha256((root / "assets/dmg-background.tiff").read_bytes()).digest()
+assert hashlib.sha256(background.read_bytes()).digest() == hashlib.sha256((root / ".build/dmg-background.tiff").read_bytes()).digest()
 assert (volume / ".VolumeIcon.icns").read_bytes() == (volume / "IceScreen.app/Contents/Resources/AppIcon.icns").read_bytes()
 with Image.open(background) as image:
     assert image.size == (1320, 800)

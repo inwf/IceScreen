@@ -41,6 +41,10 @@ jobs:
         with:
           python-version: '3.12'
           cache-dependency-glob: 'scripts/*.py'
+      - name: Install Cairo for installation background rendering
+        run: |
+          brew install cairo
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix cairo)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-/usr/local/lib:/usr/lib}" >> "$GITHUB_ENV"
       - name: Test installation background generation and validation
         run: uv run scripts/test-dmg-background.py
       - name: Select toolchain

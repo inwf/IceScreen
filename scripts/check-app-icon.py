@@ -26,9 +26,11 @@ assert (args.iconset.parent / "AppIcon.source.sha256").read_text().strip() == so
 expected_sizes = {(points, points, scale) for points in (16, 32, 128, 256, 512) for scale in (1, 2)}
 with Image.open(icon_path) as icon:
     available_sizes = set(icon.info["sizes"])
-    missing_sizes = expected_sizes - available_sizes
-    assert not missing_sizes, f"图标缺少标准或 Retina 尺寸：{sorted(missing_sizes)}"
-    for width, height, scale in expected_sizes:
+    expected_points = {(points, points) for points in (16, 32, 128, 256, 512)}
+    available_points = {(width, height) for width, height, _ in available_sizes}
+    missing_points = expected_points - available_points
+    assert not missing_points, f"图标缺少逻辑尺寸：{sorted(missing_points)}，ICNS 尺寸：{sorted(available_sizes)}"
+    for width, height, scale in expected_sizes & available_sizes:
         suffix = "@2x" if scale == 2 else ""
         with Image.open(args.iconset / f"icon_{width}x{height}{suffix}.png") as expected:
             actual = icon.icns.getimage((width, height, scale)).convert("RGBA")

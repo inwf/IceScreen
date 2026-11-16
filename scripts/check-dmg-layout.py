@@ -15,11 +15,11 @@ root = Path(__file__).resolve().parent.parent
 with DSStore.open(str(volume / ".DS_Store"), "r") as store:
     window = store["."]["bwsp"]
     icons = store["."]["icvp"]
-    assert window["WindowBounds"] == "{{100, 100}, {660, 422}}"
+    assert window["WindowBounds"] == "{{100, 100}, {660, 422}}", f"Finder 窗口布局不正确：{window!r}"
     assert not window["ShowToolbar"] and not window["ShowStatusBar"]
     assert icons["iconSize"] == 128 and icons["arrangeBy"] == "none"
-    assert store["IceScreen.app"]["Iloc"] == (180, 205)
-    assert store["Applications"]["Iloc"] == (480, 205)
+    assert store["IceScreen.app"]["Iloc"] == (180, 205), f"应用图标位置不正确：{store['IceScreen.app']['Iloc']!r}"
+    assert store["Applications"]["Iloc"] == (480, 205), f"Applications 图标位置不正确：{store['Applications']['Iloc']!r}"
     alias = Alias.from_bytes(icons["backgroundImageAlias"])
     assert alias.volume.name == "IceScreen"
     assert alias.target.posix_path == "/.background/dmg-background.tiff"

@@ -28,18 +28,27 @@ final class SourceWindowTarget {
         }
     }
 
-    func validate() throws -> [String: Any] {
+    func validate() throws -> [String: Any]? {
         guard let application, !application.isTerminated,
               let current = NSRunningApplication(processIdentifier: processID), !current.isTerminated,
               current.launchDate == launchedAt else {
             throw RequestError.message("来源应用已经退出或重新启动。")
         }
         let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID) as? [[String: Any]] ?? []
-        guard let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == windowID }),
-              entry[kCGWindowOwnerPID as String] as? pid_t == processID else {
+        if let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == windowID }) {
+            guard entry[kCGWindowOwnerPID as String] as? pid_t == processID else {
+                throw RequestError.message("来源窗口身份已经失效。")
+            }
+            return entry
+        }
+        // 隐藏、最小化时 WindowServer 列表也可能暂时省略窗口，须查询真实 AX 对象的存活状态。
+        guard let element = try resolveElement() else { throw RequestError.message("来源窗口已经关闭。") }
+        var role: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success,
+              role as? String == kAXWindowRole else {
             throw RequestError.message("来源窗口已经关闭。")
         }
-        return entry
+        return nil
     }
 
     func resolveElement() throws -> AXUIElement? {

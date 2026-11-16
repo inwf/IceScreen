@@ -273,7 +273,7 @@ enum SourceFocusChecks {
         NSApp.sendEvent(event(.leftMouseDown))
     }
 
-    @MainActor private static func wait(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
+    @MainActor private static func wait(file: StaticString = #file, line: UInt = #line, _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(8))
         while !condition() {
             precondition(ContinuousClock.now < deadline, "Timed out waiting for the real source window.", file: file, line: line)

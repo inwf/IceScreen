@@ -126,7 +126,7 @@ final class WindowCatalog: ObservableObject {
             var focusedID: CGWindowID?
             var read = AXError.noValue
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            let onScreen = entry[kCGWindowIsOnscreen as String] as? Bool == true
+            let onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
             if let target = try reference.resolveElement() {
                 if !prepared {
                     try prepare(target)

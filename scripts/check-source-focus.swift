@@ -170,7 +170,11 @@ enum SourceFocusChecks {
         precondition(AXUIElementPerformAction(unsafeBitCast(button, to: AXUIElement.self), kAXPressAction as CFString) == .success)
         try await Task.sleep(for: .milliseconds(100))
         var rejected = false
-        do { try await catalog.focus(source, retainedTarget: session.focusTarget) } catch { rejected = true }
+        do { try await catalog.focus(source, retainedTarget: session.focusTarget) }
+        catch {
+            guard case RequestError.message(let message) = error, message == "来源窗口已经关闭。" else { throw error }
+            rejected = true
+        }
         precondition(rejected, "A closed source window must not be reported as focused.")
     }
 

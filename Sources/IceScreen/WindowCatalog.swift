@@ -123,7 +123,7 @@ final class WindowCatalog: ObservableObject {
             try prepare(target)
             prepared = true
         }
-        // 窗口 ID 已由 WindowServer 验证，跨 Space 请求不依赖当前 AX 窗口列表。
+        // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
         try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
         if let target = reference.retainedElement { try raise(target) }
         app.activate(options: [.activateAllWindows])

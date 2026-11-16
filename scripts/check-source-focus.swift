@@ -47,6 +47,7 @@ enum SourceFocusChecks {
     }
 
     @MainActor private static func check(in directory: URL) async throws {
+        print("Checking cross-process focus and background floating-panel interactions.")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = ["--fixture"]
         let sourceApp = try await NSWorkspace.shared.openApplication(at: directory.appendingPathComponent("Source.app"),
@@ -85,6 +86,7 @@ enum SourceFocusChecks {
         try await wait { session.hasCapturedFrame }
         let afterCapture = try SourceWindowRecovery.frame(capturedTarget)
         precondition(afterCapture == original, "Capturing must preserve the source window frame.")
+        print("Focusing other fixture: PID=\(otherApp.processIdentifier), window=\(other.windowID).")
         try await catalog.focus(other)
         precondition(!NSApp.isActive && !session.panel.isKeyWindow, "The content click must originate in a background panel.")
 
@@ -110,6 +112,7 @@ enum SourceFocusChecks {
         session.resetZoom()
 
         click(session, point: NSPoint(x: 24, y: session.surface.bounds.height - 24))
+        print("Checking captured fixture return: PID=\(sourceApp.processIdentifier), window=\(source.windowID).")
         try await wait { confirmations == 1 }
         precondition(sourceApp.isActive && session.panel.isVisible, "Single click must focus the source and retain the panel.")
         precondition(focusedTitle(sourceApp) == source.title, "The captured window must be focused, including in a multi-window app.")
@@ -167,6 +170,7 @@ enum SourceFocusChecks {
     }
 
     @MainActor private static func checkTerminalFullScreen(in directory: URL) async throws {
+        print("Checking actual Terminal return from a full-screen Space.")
         let terminalConfiguration = NSWorkspace.OpenConfiguration()
         terminalConfiguration.createsNewApplicationInstance = true
         let terminal = try await NSWorkspace.shared.openApplication(

@@ -2,10 +2,12 @@
 import AppKit
 import ScreenCaptureKit
 import ApplicationServices
+import OSLog
 import IceCore
 
 @MainActor
 final class WindowCatalog: ObservableObject {
+    private static let focusLog = Logger(subsystem: "org.icescreen.app", category: "SourceFocus")
     @Published private(set) var windows: [SCWindow] = []
     @Published private(set) var loading = false
     @Published var error: String?
@@ -120,6 +122,10 @@ final class WindowCatalog: ObservableObject {
             try Task.checkCancellation()
             guard generation == focusGeneration else { throw CancellationError() }
             let entry = try reference.validate()
+            var focusedID: CGWindowID?
+            var read = AXError.noValue
+            let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+            let onScreen = entry[kCGWindowIsOnscreen as String] as? Bool == true
             if let target = try reference.resolveElement() {
                 if !prepared {
                     try prepare(target)
@@ -129,15 +135,16 @@ final class WindowCatalog: ObservableObject {
                     prepared = true
                 }
                 var focused: CFTypeRef?
-                let read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
-                if NSWorkspace.shared.frontmostApplication?.processIdentifier == owner.processID,
-                   entry[kCGWindowIsOnscreen as String] as? Bool == true,
-                   read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID(),
-                   try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self)) == source.windowID {
+                read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
+                if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {
+                    focusedID = try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self))
+                }
+                if frontmostPID == owner.processID, onScreen, focusedID == source.windowID {
                     return
                 }
             }
             guard ContinuousClock.now < deadline else {
+                Self.focusLog.error("Source focus timeout: expectedPID=\(owner.processID), expectedWindow=\(source.windowID), frontmostPID=\(frontmostPID), focusedWindow=\(focusedID ?? 0), onScreen=\(onScreen), axStatus=\(read.rawValue)")
                 throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
             }
             try await Task.sleep(for: .milliseconds(25))

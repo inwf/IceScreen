@@ -11,6 +11,7 @@ enum PanelEventChecks {
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
         application.finishLaunching()
+        application.activate(ignoringOtherApps: true)
         guard let screen = NSScreen.main else { fatalError("Panel checks require an active macOS graphical session.") }
         let frame = NSRect(x: screen.visibleFrame.midX - 90, y: screen.visibleFrame.midY - 70, width: 180, height: 140)
         let lower = makePanel(frame)
@@ -418,6 +419,10 @@ enum PanelEventChecks {
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        let content = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor.white.cgColor
+        panel.contentView = content
         return panel
     }
 

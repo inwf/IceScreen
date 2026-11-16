@@ -83,6 +83,9 @@ jobs:
         run: bash scripts/check-panel-events.sh
       - name: Check detection command processes
         run: python3 scripts/check-detection-command.py .build/debug/IceScreen
+      - name: Check native source focus and full-screen Space return
+        timeout-minutes: 10
+        run: bash scripts/check-source-focus.sh --ci
       - name: Build universal application and DMG
         run: UNIVERSAL=1 bash scripts/build.sh
       - name: Verify application bundle

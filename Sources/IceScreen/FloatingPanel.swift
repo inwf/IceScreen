@@ -11,6 +11,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private static let interactionLog = Logger(subsystem: "org.icescreen.app", category: "PanelInteraction")
     let id = UUID()
     let source: SCWindow
+    let focusTarget: SourceWindowTarget
     let pipeline: CapturePipeline
     let panel: FloatingPanel
     let surface: PanelSurface
@@ -85,6 +86,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 
     init(source: SCWindow, viewport: Viewport, preferences: Preferences, offset: Int) {
         self.source = source
+        self.focusTarget = SourceWindowTarget(source)
         self.sourceSize = source.frame.size
         self.viewport = viewport
         fps = preferences.fps(for: source.owningApplication?.bundleIdentifier ?? "")

@@ -79,53 +79,66 @@ final class WindowCatalog: ObservableObject {
         return nil
     }
 
-    func focus(_ source: SCWindow) async throws {
+    func focus(_ source: SCWindow, retainedTarget: SourceWindowTarget? = nil) async throws {
         try Task.checkCancellation()
         focusGeneration += 1
         let generation = focusGeneration
         guard AXIsProcessTrusted() else { throw RequestError.message("需要辅助功能权限才能定位来源窗口。") }
-        guard let owner = source.owningApplication,
-              let app = NSRunningApplication(processIdentifier: owner.processID), !app.isTerminated else {
+        guard let owner = source.owningApplication else {
             throw RequestError.message("来源应用已经退出。")
         }
-        let root = AXUIElementCreateApplication(owner.processID)
-        var result: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &result) == .success,
-              let windows = result as? [AXUIElement], !windows.isEmpty else {
-            throw RequestError.message("来源应用没有提供可定位的窗口，请确认窗口仍然打开。")
+        let reference = retainedTarget ?? SourceWindowTarget(source)
+        guard reference.processID == owner.processID, reference.windowID == source.windowID else {
+            throw RequestError.message("来源窗口标识与捕获会话不一致。")
         }
-        let currentInfo = CGWindowListCopyWindowInfo(.optionIncludingWindow, source.windowID) as? [[String: Any]]
-        guard let entry = currentInfo?.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == source.windowID }) else {
-            throw RequestError.message("来源窗口已经关闭。")
-        }
-        guard entry[kCGWindowOwnerPID as String] as? pid_t == owner.processID,
-              let target = try windows.first(where: { try WindowActivation.windowID(of: $0) == source.windowID }) else {
-            throw RequestError.message("来源应用没有提供对应窗口的辅助功能对象。")
-        }
+        _ = try reference.validate()
+        guard let app = reference.application else { throw RequestError.message("来源应用已经退出。") }
+        let root = reference.root
         if app.isHidden {
             try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
         }
-        var minimized: CFTypeRef?
-        if AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized) == .success,
-           minimized as? Bool == true {
-            try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
+        var prepared = false
+        func prepare(_ target: AXUIElement) throws {
+            var minimized: CFTypeRef?
+            if AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized) == .success,
+               minimized as? Bool == true {
+                try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
+            }
+            try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
         }
-        try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
+        if let target = try reference.resolveElement() {
+            try prepare(target)
+            prepared = true
+        }
+        // 窗口 ID 已由 WindowServer 验证，跨 Space 请求不依赖当前 AX 窗口列表。
         try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-        try raise(target)
+        if let target = reference.retainedElement { try raise(target) }
         app.activate(options: [.activateAllWindows])
 
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while true {
             try Task.checkCancellation()
             guard generation == focusGeneration else { throw CancellationError() }
-            guard !app.isTerminated else { throw RequestError.message("来源应用已经退出。") }
-            var focused: CFTypeRef?
-            let read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
-            if NSWorkspace.shared.frontmostApplication?.processIdentifier == owner.processID,
-               read == .success, let focused, CFEqual(focused, target) { return }
+            let entry = try reference.validate()
+            if let target = try reference.resolveElement() {
+                if !prepared {
+                    try prepare(target)
+                    try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                    try raise(target)
+                    app.activate(options: [.activateAllWindows])
+                    prepared = true
+                }
+                var focused: CFTypeRef?
+                let read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
+                if NSWorkspace.shared.frontmostApplication?.processIdentifier == owner.processID,
+                   entry[kCGWindowIsOnscreen as String] as? Bool == true,
+                   read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID(),
+                   try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self)) == source.windowID {
+                    return
+                }
+            }
             guard ContinuousClock.now < deadline else {
-                throw RequestError.message("来源窗口尚未获得焦点，请检查来源应用是否有阻塞操作的对话框。")
+                throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
             }
             try await Task.sleep(for: .milliseconds(25))
         }

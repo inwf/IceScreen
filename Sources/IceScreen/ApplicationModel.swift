@@ -310,9 +310,9 @@ final class ApplicationModel: ObservableObject {
             self.sessions.removeAll { $0.id == value.id }
             if self.sessions.isEmpty { self.stopSessionMonitoring() }
         }
-        session.onFocus = { [weak self] source in
-            guard let self else { throw CancellationError() }
-            try await self.catalog.focus(source)
+        session.onFocus = { [weak self, weak session] source in
+            guard let self, let session else { throw CancellationError() }
+            try await self.catalog.focus(source, retainedTarget: session.focusTarget)
         }
         session.onPreview = { [weak self, weak session] in
             guard let self, let session else { return }

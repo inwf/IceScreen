@@ -108,6 +108,17 @@ final class WindowCatalog: ObservableObject {
             }
             try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
         }
+        func selectKeyboardFocus(_ target: AXUIElement) throws {
+            var writable: DarwinBoolean = false
+            let status = AXUIElementIsAttributeSettable(root, kAXFocusedWindowAttribute as CFString, &writable)
+            if status == .attributeUnsupported { return }
+            guard status == .success else {
+                throw RequestError.message("检查来源窗口焦点接口失败（辅助功能错误 \(status.rawValue)）。")
+            }
+            if writable.boolValue {
+                try set(root, kAXFocusedWindowAttribute, target, operation: "聚焦来源窗口")
+            }
+        }
         if let target = try reference.resolveElement() {
             try prepare(target)
             prepared = true
@@ -142,6 +153,9 @@ final class WindowCatalog: ObservableObject {
                 }
                 if frontmostPID == owner.processID, onScreen, focusedID == source.windowID {
                     return
+                }
+                if frontmostPID == owner.processID, onScreen, focusedID != source.windowID {
+                    try selectKeyboardFocus(target)
                 }
             }
             guard ContinuousClock.now < deadline else {

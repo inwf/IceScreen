@@ -97,6 +97,7 @@ final class WindowCatalog: ObservableObject {
         let root = reference.root
         var unhideRequested = false
         var restoreRequested = false
+        var selectionReady = false
         func prepare(_ target: AXUIElement) throws {
             var minimized: CFTypeRef?
             let status = AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized)
@@ -137,6 +138,7 @@ final class WindowCatalog: ObservableObject {
                 onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
                 let target = try reference.resolveElement()
                 if ContinuousClock.now >= nextActivation {
+                    selectionReady = false
                     if app.isHidden {
                         if !unhideRequested {
                             try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
@@ -144,14 +146,14 @@ final class WindowCatalog: ObservableObject {
                         }
                         throw SourceFocusPending(operation: "等待显示来源应用")
                     }
-                    if let target { try prepare(target) }
+                    if let target { try prepare(target); selectionReady = true }
                     // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
                     try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
                     app.activate(options: [.activateAllWindows])
                     if let target { try raise(target) }
                     nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
                 }
-                if let target {
+                if let target, selectionReady {
                     var focused: CFTypeRef?
                     read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
                     if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {

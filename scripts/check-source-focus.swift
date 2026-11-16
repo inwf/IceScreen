@@ -219,7 +219,6 @@ enum SourceFocusChecks {
         }
         let original = try SourceWindowRecovery.frame(target)
         let videoTarget = SourceWindowTarget(videoSource)
-        guard let videoElement = videoTarget.retainedElement else { fatalError("Missing full-screen fixture AX window.") }
         var confirmations = 0
         session.onFocus = { window in
             try await catalog.focus(window, retainedTarget: session.focusTarget)
@@ -228,6 +227,7 @@ enum SourceFocusChecks {
         session.start()
         try await wait { session.hasCapturedFrame }
         try await catalog.focus(videoSource, retainedTarget: videoTarget)
+        guard let videoElement = videoTarget.retainedElement else { fatalError("Missing focused full-screen fixture AX window.") }
         precondition(AXUIElementSetAttributeValue(videoElement, "AXFullScreen" as CFString, kCFBooleanTrue) == .success,
                      "The native fixture must enter an actual full-screen Space.")
         try await wait { isFullScreen(videoElement) && video.isActive && !isOnScreen(source.windowID) }

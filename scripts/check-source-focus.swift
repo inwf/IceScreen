@@ -55,6 +55,7 @@ enum SourceFocusChecks {
         print("Checking cross-process focus and background floating-panel interactions.")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = ["--fixture"]
+        configuration.createsNewApplicationInstance = true
         let sourceApp = try await NSWorkspace.shared.openApplication(at: directory.appendingPathComponent("Source.app"),
                                                                      configuration: configuration)
         defer { sourceApp.terminate() }
@@ -64,12 +65,13 @@ enum SourceFocusChecks {
         let catalog = WindowCatalog()
         var source: SCWindow?
         var other: SCWindow?
-        for _ in 0..<60 {
+        for _ in 0..<160 {
             await catalog.refresh()
             if let error = catalog.error { fatalError(error) }
             source = catalog.windows.first { $0.owningApplication?.processID == sourceApp.processIdentifier
                 && $0.title == "IceScreen focus check 1" }
-            other = catalog.windows.first { $0.owningApplication?.processID == otherApp.processIdentifier }
+            other = catalog.windows.first { $0.owningApplication?.processID == otherApp.processIdentifier
+                && $0.title == "IceScreen focus check 1" }
             if source != nil && other != nil { break }
             try await Task.sleep(for: .milliseconds(50))
         }
@@ -173,7 +175,12 @@ enum SourceFocusChecks {
         precondition(AXUIElementCopyAttributeValue(target, kAXCloseButtonAttribute as CFString, &button) == .success)
         guard let button, CFGetTypeID(button) == AXUIElementGetTypeID() else { fatalError("Missing fixture close button.") }
         precondition(AXUIElementPerformAction(unsafeBitCast(button, to: AXUIElement.self), kAXPressAction as CFString) == .success)
-        try await Task.sleep(for: .milliseconds(100))
+        try await wait {
+            var role: CFTypeRef?
+            let closed = AXUIElementCopyAttributeValue(target, kAXRoleAttribute as CFString, &role) == .invalidUIElement
+            let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+            return closed && !entries.contains { ($0[kCGWindowNumber as String] as? CGWindowID) == source.windowID }
+        }
         var rejected = false
         do { try await catalog.focus(source, retainedTarget: session.focusTarget) }
         catch {
@@ -238,6 +245,9 @@ enum SourceFocusChecks {
         precondition(AXUIElementSetAttributeValue(videoElement, "AXFullScreen" as CFString, kCFBooleanTrue) == .success,
                      "The native fixture must enter an actual full-screen Space.")
         try await wait { isFullScreen(videoElement) && video.isActive && !isOnScreen(source.windowID) }
+        session.refreshSourceState()
+        precondition(session.panel.isVisible && isOnScreen(CGWindowID(session.panel.windowNumber)),
+                     "The floating panel must remain physically on screen while Terminal is in another Space.")
         precondition(!NSApp.isActive && !session.panel.isKeyWindow, "Click must originate in a background floating panel.")
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(session.focusTarget.root, kAXWindowsAttribute as CFString, &value)

@@ -19,6 +19,11 @@ enum SourceFocusChecks {
                 window.title = "IceScreen focus check \(index)"
                 window.isReleasedWhenClosed = false
                 window.collectionBehavior = [.fullScreenPrimary]
+                let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 280))
+                text.string = "IceScreen source focus document \(index)"
+                text.autoresizingMask = [.width, .height]
+                window.contentView = text
+                window.makeFirstResponder(text)
                 window.makeKeyAndOrderFront(nil)
                 return window
             }
@@ -33,8 +38,8 @@ enum SourceFocusChecks {
         app.finishLaunching()
         Task { @MainActor in
             do {
-                try await check(in: URL(fileURLWithPath: arguments[0]))
                 try await checkTerminalFullScreen(in: URL(fileURLWithPath: arguments[0]))
+                try await check(in: URL(fileURLWithPath: arguments[0]))
                 print("Passed cross-process source focus, repeated clicks, double-click close, disabled clicks, and closed-source checks.")
                 try "passed\n".write(toFile: arguments[1], atomically: true, encoding: .utf8)
                 app.terminate(nil)

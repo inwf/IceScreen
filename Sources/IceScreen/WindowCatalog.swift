@@ -95,13 +95,18 @@ final class WindowCatalog: ObservableObject {
         }
         guard let app = reference.application else { throw RequestError.message("来源应用已经退出。") }
         let root = reference.root
-        var prepared = false
+        var unhideRequested = false
+        var restoreRequested = false
         func prepare(_ target: AXUIElement) throws {
             var minimized: CFTypeRef?
             let status = AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized)
             if status == .cannotComplete { throw SourceFocusPending(operation: "读取来源窗口最小化状态") }
             if status == .success, minimized as? Bool == true {
-                try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
+                if !restoreRequested {
+                    try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
+                    restoreRequested = true
+                }
+                throw SourceFocusPending(operation: "等待来源窗口完成恢复")
             }
             try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
         }
@@ -131,11 +136,15 @@ final class WindowCatalog: ObservableObject {
                 let entry = try reference.validate()
                 onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
                 let target = try reference.resolveElement()
-                if ContinuousClock.now >= nextActivation || (target != nil && !prepared) {
+                if ContinuousClock.now >= nextActivation {
                     if app.isHidden {
-                        try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
+                        if !unhideRequested {
+                            try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
+                            unhideRequested = true
+                        }
+                        throw SourceFocusPending(operation: "等待显示来源应用")
                     }
-                    if let target { try prepare(target); prepared = true }
+                    if let target { try prepare(target) }
                     // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
                     try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
                     app.activate(options: [.activateAllWindows])
@@ -152,8 +161,6 @@ final class WindowCatalog: ObservableObject {
                     if frontmostPID == owner.processID, onScreen, focusedID != source.windowID {
                         try selectKeyboardFocus(target)
                     }
-                } else {
-                    prepared = false
                 }
             } catch let pending as SourceFocusPending {
                 pendingOperation = pending.operation

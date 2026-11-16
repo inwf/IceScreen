@@ -403,6 +403,7 @@ enum PanelEventChecks {
     @MainActor private static func makePanel(_ frame: NSRect) -> FloatingPanel {
         let panel = FloatingPanel(contentRect: frame, styleMask: [.borderless, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.isMovableByWindowBackground = false

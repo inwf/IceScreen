@@ -56,6 +56,7 @@ open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/focus-checks/Check
 cat "$stdout" "$stderr"
 if [[ ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
     log show --last 2m --style compact --predicate 'subsystem == "org.icescreen.app" AND category == "SourceFocus"'
+    lsappinfo front
     echo "Source focus checks did not complete successfully." >&2
     exit 1
 fi

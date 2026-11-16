@@ -145,6 +145,8 @@ final class WindowCatalog: ObservableObject {
             }
             guard ContinuousClock.now < deadline else {
                 Self.focusLog.error("Source focus timeout: expectedPID=\(owner.processID), expectedWindow=\(source.windowID), frontmostPID=\(frontmostPID), focusedWindow=\(focusedID ?? 0), onScreen=\(onScreen), axStatus=\(read.rawValue)")
+                let foreground = NSWorkspace.shared.frontmostApplication
+                Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")
                 throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
             }
             try await Task.sleep(for: .milliseconds(25))

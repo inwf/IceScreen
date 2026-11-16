@@ -55,7 +55,7 @@ enum SourceWindowRecovery {
     private static func restore(_ record: WindowRecoveryRecord) throws {
         guard let app = NSRunningApplication(processIdentifier: record.pid), app.launchDate == record.launchedAt,
               !app.isTerminated else { return }
-        let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, record.id) as? [[String: Any]] ?? []
+        let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
         guard entries.contains(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == record.id }) else { return }
         let target = try element(pid: record.pid, id: record.id)
         let current = try frame(target)

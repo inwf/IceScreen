@@ -34,7 +34,7 @@ final class SourceWindowTarget {
               current.launchDate == launchedAt else {
             throw RequestError.message("来源应用已经退出或重新启动。")
         }
-        let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID) as? [[String: Any]] ?? []
+        let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
         if let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == windowID }) {
             guard entry[kCGWindowOwnerPID as String] as? pid_t == processID else {
                 throw RequestError.message("来源窗口身份已经失效。")

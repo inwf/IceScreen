@@ -463,7 +463,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     func refreshSourceState() { checkSourceGeometry() }
 
     private func checkSourceGeometry() {
-        guard let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, source.windowID) as? [[String: Any]] else { return }
+        guard let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return }
         guard let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == source.windowID }) else {
             close(); return
         }

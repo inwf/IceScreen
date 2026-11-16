@@ -273,7 +273,7 @@ enum SourceFocusChecks {
     }
 
     @MainActor private static func isOnScreen(_ id: CGWindowID) -> Bool {
-        let entries = CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]] ?? []
+        let entries = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         return entries.first { ($0[kCGWindowNumber as String] as? CGWindowID) == id }?[kCGWindowIsOnscreen as String] as? Bool == true
     }
 

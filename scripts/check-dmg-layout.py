@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from ds_store import DSStore
+from ds_store.store import codecs
 from mac_alias import Alias
 from PIL import Image
 
@@ -16,6 +17,8 @@ if sys.platform == "darwin":
 
 volume = Path(sys.argv[1])
 root = Path(__file__).resolve().parent.parent
+# pBBk 不参与安装布局校验，保留其原始数据，避免自动调用书签解码器。
+codecs.pop(b"pBBk")
 with DSStore.open(str(volume / ".DS_Store"), "r") as store:
     window = store["."]["bwsp"]
     icons = store["."]["icvp"]

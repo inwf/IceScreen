@@ -80,6 +80,7 @@ enum SourceFocusChecks {
         session.onFocus = { window in
             try await catalog.focus(window, retainedTarget: session.focusTarget)
             confirmations += 1
+            print("Confirmed fixture return \(confirmations).")
         }
         session.start()
         session.surface.layoutSubtreeIfNeeded()
@@ -136,10 +137,12 @@ enum SourceFocusChecks {
         session.applyPreferences(preferences)
 
         let target = focusedWindow(sourceApp)
+        print("Checking minimized and hidden source restoration.")
         precondition(AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success)
         precondition(AXUIElementSetAttributeValue(session.focusTarget.root, kAXHiddenAttribute as CFString, kCFBooleanTrue) == .success,
                      "The real source application must accept the Accessibility hide request.")
         try await wait { sourceApp.isHidden }
+        print("Source is actually hidden; clicking the floating panel to restore it.")
         click(session)
         try await wait { confirmations == before + 1 }
         precondition(sourceApp.isActive && focusedTitle(sourceApp) == source.title, "A minimized or hidden source must be restored.")
@@ -154,6 +157,7 @@ enum SourceFocusChecks {
         }
 
         try await catalog.focus(other)
+        print("Checking double-click source return and panel close.")
         click(session)
         click(session, count: 2)
         try await wait { !session.panel.isVisible }
@@ -269,10 +273,10 @@ enum SourceFocusChecks {
         NSApp.sendEvent(event(.leftMouseDown))
     }
 
-    @MainActor private static func wait(_ condition: () -> Bool) async throws {
+    @MainActor private static func wait(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(8))
         while !condition() {
-            precondition(ContinuousClock.now < deadline, "Timed out waiting for the real source window.")
+            precondition(ContinuousClock.now < deadline, "Timed out waiting for the real source window.", file: file, line: line)
             try await Task.sleep(for: .milliseconds(25))
         }
     }

@@ -93,17 +93,14 @@ final class WindowCatalog: ObservableObject {
         guard reference.processID == owner.processID, reference.windowID == source.windowID else {
             throw RequestError.message("来源窗口标识与捕获会话不一致。")
         }
-        _ = try reference.validate()
         guard let app = reference.application else { throw RequestError.message("来源应用已经退出。") }
         let root = reference.root
-        if app.isHidden {
-            try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
-        }
         var prepared = false
         func prepare(_ target: AXUIElement) throws {
             var minimized: CFTypeRef?
-            if AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized) == .success,
-               minimized as? Bool == true {
+            let status = AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized)
+            if status == .cannotComplete { throw SourceFocusPending(operation: "读取来源窗口最小化状态") }
+            if status == .success, minimized as? Bool == true {
                 try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
             }
             try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
@@ -112,6 +109,7 @@ final class WindowCatalog: ObservableObject {
             var writable: DarwinBoolean = false
             let status = AXUIElementIsAttributeSettable(root, kAXFocusedWindowAttribute as CFString, &writable)
             if status == .attributeUnsupported { return }
+            if status == .cannotComplete { throw SourceFocusPending(operation: "检查来源窗口焦点接口") }
             guard status == .success else {
                 throw RequestError.message("检查来源窗口焦点接口失败（辅助功能错误 \(status.rawValue)）。")
             }
@@ -119,56 +117,54 @@ final class WindowCatalog: ObservableObject {
                 try set(root, kAXFocusedWindowAttribute, target, operation: "聚焦来源窗口")
             }
         }
-        if let target = try reference.resolveElement() {
-            try prepare(target)
-            prepared = true
-        }
-        // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
-        try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-        if let target = reference.retainedElement { try raise(target) }
-        app.activate(options: [.activateAllWindows])
-
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        var nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
+        var nextActivation = ContinuousClock.now
+        var pendingOperation = ""
         while true {
             try Task.checkCancellation()
             guard generation == focusGeneration else { throw CancellationError() }
-            let entry = try reference.validate()
             var focusedID: CGWindowID?
             var read = AXError.noValue
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            let onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
-            if let target = try reference.resolveElement() {
-                if !prepared {
-                    try prepare(target)
+            var onScreen = false
+            do {
+                let entry = try reference.validate()
+                onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
+                let target = try reference.resolveElement()
+                if ContinuousClock.now >= nextActivation || (target != nil && !prepared) {
+                    if app.isHidden {
+                        try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
+                    }
+                    if let target { try prepare(target); prepared = true }
+                    // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
                     try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-                    try raise(target)
                     app.activate(options: [.activateAllWindows])
-                    prepared = true
+                    if let target { try raise(target) }
+                    nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
                 }
-                var focused: CFTypeRef?
-                read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
-                if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {
-                    focusedID = try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self))
+                if let target {
+                    var focused: CFTypeRef?
+                    read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
+                    if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {
+                        focusedID = try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self))
+                    }
+                    if frontmostPID == owner.processID, onScreen, focusedID == source.windowID { return }
+                    if frontmostPID == owner.processID, onScreen, focusedID != source.windowID {
+                        try selectKeyboardFocus(target)
+                    }
+                } else {
+                    prepared = false
                 }
-                if frontmostPID == owner.processID, onScreen, focusedID == source.windowID {
-                    return
-                }
-                if frontmostPID == owner.processID, onScreen, focusedID != source.windowID {
-                    try selectKeyboardFocus(target)
-                }
+            } catch let pending as SourceFocusPending {
+                pendingOperation = pending.operation
+                nextActivation = ContinuousClock.now.advanced(by: .milliseconds(100))
             }
             guard ContinuousClock.now < deadline else {
                 Self.focusLog.error("Source focus timeout: expectedPID=\(owner.processID), expectedWindow=\(source.windowID), frontmostPID=\(frontmostPID), focusedWindow=\(focusedID ?? 0), onScreen=\(onScreen), axStatus=\(read.rawValue)")
                 let foreground = NSWorkspace.shared.frontmostApplication
                 Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")
+                Self.focusLog.error("Pending Accessibility transition: \(pendingOperation, privacy: .public)")
                 throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
-            }
-            if ContinuousClock.now >= nextActivation {
-                try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-                if let target = reference.retainedElement { try raise(target) }
-                app.activate(options: [.activateAllWindows])
-                nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
             }
             try await Task.sleep(for: .milliseconds(25))
         }
@@ -176,11 +172,13 @@ final class WindowCatalog: ObservableObject {
 
     private func set(_ element: AXUIElement, _ attribute: String, _ value: CFTypeRef, operation: String) throws {
         let status = AXUIElementSetAttributeValue(element, attribute as CFString, value)
+        if status == .cannotComplete { throw SourceFocusPending(operation: operation) }
         guard status == .success else { throw RequestError.message("\(operation)失败（辅助功能错误 \(status.rawValue)）。") }
     }
 
     private func raise(_ window: AXUIElement) throws {
         let status = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        if status == .cannotComplete { throw SourceFocusPending(operation: "置前来源窗口") }
         guard status == .success else { throw RequestError.message("置前来源窗口失败（辅助功能错误 \(status.rawValue)）。") }
     }
 

@@ -4,6 +4,10 @@ import ApplicationServices
 import Carbon
 import IceCore
 
+struct SourceFocusPending: Error {
+    let operation: String
+}
+
 @MainActor
 final class WindowActivation {
     private typealias SetFrontProcess = @convention(c) (UnsafePointer<ProcessSerialNumber>, CGWindowID, UInt32) -> Int32
@@ -46,7 +50,9 @@ final class WindowActivation {
     static func windowID(of element: AXUIElement) throws -> CGWindowID? {
         let connection = try connection.get()
         var identifier: CGWindowID = 0
-        guard connection.getWindowID(element, &identifier) == .success, identifier != 0 else { return nil }
+        let status = connection.getWindowID(element, &identifier)
+        if status == .cannotComplete { throw SourceFocusPending(operation: "读取来源窗口标识") }
+        guard status == .success, identifier != 0 else { return nil }
         return identifier
     }
 

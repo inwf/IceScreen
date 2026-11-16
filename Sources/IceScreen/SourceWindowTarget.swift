@@ -44,7 +44,9 @@ final class SourceWindowTarget {
         // 隐藏、最小化时 WindowServer 列表也可能暂时省略窗口，须查询真实 AX 对象的存活状态。
         guard let element = try resolveElement() else { throw RequestError.message("来源窗口已经关闭。") }
         var role: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success,
+        let status = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        if status == .cannotComplete { throw SourceFocusPending(operation: "验证来源窗口存活状态") }
+        guard status == .success,
               role as? String == kAXWindowRole else {
             throw RequestError.message("来源窗口已经关闭。")
         }

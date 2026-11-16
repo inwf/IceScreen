@@ -202,13 +202,18 @@ enum SourceFocusChecks {
         for _ in 0..<160 {
             await catalog.refresh()
             if let error = catalog.error { fatalError(error) }
-            source = catalog.windows.first { $0.owningApplication?.processID == terminal.processIdentifier && $0.isOnScreen }
-            videoSource = catalog.windows.first { $0.owningApplication?.processID == video.processIdentifier }
+            source = catalog.windows.first { $0.owningApplication?.processID == terminal.processIdentifier
+                && $0.isOnScreen && $0.frame.width >= 200 && $0.frame.height >= 200 && $0.title?.isEmpty == false }
+            videoSource = catalog.windows.first { $0.owningApplication?.processID == video.processIdentifier
+                && $0.title == "IceScreen focus check 1" }
             if source != nil && videoSource != nil { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         guard let source, let videoSource else { fatalError("Terminal and full-screen fixture windows must exist.") }
+        print("Terminal target: PID=\(terminal.processIdentifier), window=\(source.windowID), title=\(source.title ?? "").")
+        print("Full-screen target: PID=\(video.processIdentifier), window=\(videoSource.windowID), title=\(videoSource.title ?? "").")
         try await catalog.focus(source)
+        print("Focused the actual Terminal window before capture.")
         var preferences = Preferences()
         preferences.autoHide = false
         preferences.clickToFocus = true
@@ -226,7 +231,9 @@ enum SourceFocusChecks {
         }
         session.start()
         try await wait { session.hasCapturedFrame }
+        print("Captured the first actual Terminal frame; focusing the full-screen fixture.")
         try await catalog.focus(videoSource, retainedTarget: videoTarget)
+        print("Focused the exact full-screen fixture window.")
         guard let videoElement = videoTarget.retainedElement else { fatalError("Missing focused full-screen fixture AX window.") }
         precondition(AXUIElementSetAttributeValue(videoElement, "AXFullScreen" as CFString, kCFBooleanTrue) == .success,
                      "The native fixture must enter an actual full-screen Space.")

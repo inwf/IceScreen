@@ -89,6 +89,9 @@ enum SourceFocusChecks {
             NativeFocusDiagnostics.snapshot("fixture_discovery_failed")
             fatalError("Fixture windows did not appear in ScreenCaptureKit.")
         }
+        guard let sibling = catalog.windows.first(where: {
+            $0.owningApplication?.processID == sourceApp.processIdentifier && $0.title == "IceScreen focus check 2"
+        }) else { fatalError("The source application must have a second real window.") }
         var preferences = Preferences()
         preferences.autoHide = false
         preferences.clickToFocus = true
@@ -157,19 +160,36 @@ enum SourceFocusChecks {
         preferences.clickToFocus = true
         session.applyPreferences(preferences)
 
-        let target = focusedWindow(sourceApp)
-        print("Checking minimized and hidden source restoration.")
-        NativeFocusDiagnostics.begin("minimized_hidden_restoration")
-        precondition(AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success)
-        precondition(AXUIElementSetAttributeValue(session.focusTarget.root, kAXHiddenAttribute as CFString, kCFBooleanTrue) == .success,
-                     "The real source application must accept the Accessibility hide request.")
-        try await wait { sourceApp.isHidden }
-        session.refreshSourceState()
-        precondition(session.panel.isVisible, "Geometry monitoring must retain the panel while its source is hidden and minimized.")
-        print("Source is actually hidden; clicking the floating panel to restore it.")
-        click(session)
-        try await wait { confirmations == before + 1 }
-        precondition(sourceApp.isActive && focusedTitle(sourceApp) == source.title, "A minimized or hidden source must be restored.")
+        let target = try SourceWindowRecovery.element(pid: sourceApp.processIdentifier, id: source.windowID)
+        for (name, minimized, hidden) in [("minimized_restoration", true, false),
+                                        ("hidden_restoration", false, true),
+                                        ("minimized_hidden_restoration", true, true)] {
+            NativeFocusDiagnostics.begin(name)
+            print("Checking \(name) with the other source window holding the initial keyboard focus.")
+            try await catalog.focus(sibling)
+            let siblingFocusedID = try WindowActivation.windowID(of: focusedWindow(sourceApp))
+            precondition(siblingFocusedID == sibling.windowID)
+            if minimized {
+                precondition(AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success)
+            }
+            if hidden {
+                precondition(AXUIElementSetAttributeValue(session.focusTarget.root, kAXHiddenAttribute as CFString, kCFBooleanTrue) == .success,
+                             "The real source application must accept the Accessibility hide request.")
+            }
+            try await wait { sourceApp.isHidden == hidden && isMinimized(target) == minimized }
+            session.refreshSourceState()
+            precondition(session.panel.isVisible, "Geometry monitoring must retain a hidden or minimized source's panel.")
+            NativeFocusDiagnostics.snapshot("source_restoration_requested")
+            let expected = confirmations + 1
+            click(session)
+            try await wait { confirmations == expected }
+            let focusedID = try WindowActivation.windowID(of: focusedWindow(sourceApp))
+            let frame = try SourceWindowRecovery.frame(target)
+            precondition(sourceApp.isActive && !sourceApp.isHidden && !isMinimized(target)
+                         && focusedID == source.windowID && frame == original && session.panel.isVisible,
+                         "Restoration must return the captured window's exact keyboard focus, frame, and visible panel.")
+            NativeFocusDiagnostics.snapshot("source_restoration_confirmed")
+        }
 
         for _ in 0..<3 {
             let expected = confirmations + 1
@@ -325,6 +345,13 @@ enum SourceFocusChecks {
     @MainActor private static func isFullScreen(_ element: AXUIElement) -> Bool {
         var value: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, "AXFullScreen" as CFString, &value) == .success && value as? Bool == true
+    }
+
+    @MainActor private static func isMinimized(_ element: AXUIElement) -> Bool {
+        var value: CFTypeRef?
+        precondition(AXUIElementCopyAttributeValue(element, kAXMinimizedAttribute as CFString, &value) == .success)
+        guard let value = value as? Bool else { fatalError("The fixture must provide an actual minimized state.") }
+        return value
     }
 
     @MainActor private static func isOnScreen(_ id: CGWindowID) -> Bool {

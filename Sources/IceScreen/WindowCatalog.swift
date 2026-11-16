@@ -95,21 +95,15 @@ final class WindowCatalog: ObservableObject {
         }
         guard let app = reference.application else { throw RequestError.message("来源应用已经退出。") }
         let root = reference.root
-        var unhideRequested = false
-        var restoreRequested = false
-        var selectionReady = false
-        func prepare(_ target: AXUIElement) throws {
+        func minimized(_ target: AXUIElement) throws -> Bool {
             var minimized: CFTypeRef?
             let status = AXUIElementCopyAttributeValue(target, kAXMinimizedAttribute as CFString, &minimized)
             if status == .cannotComplete { throw SourceFocusPending(operation: "读取来源窗口最小化状态") }
-            if status == .success, minimized as? Bool == true {
-                if !restoreRequested {
-                    try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
-                    restoreRequested = true
-                }
-                throw SourceFocusPending(operation: "等待来源窗口完成恢复")
+            if status == .attributeUnsupported { return false }
+            guard status == .success, let value = minimized as? Bool else {
+                throw RequestError.message("读取来源窗口最小化状态失败（辅助功能错误 \(status.rawValue)）。")
             }
-            try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
+            return value
         }
         func selectKeyboardFocus(_ target: AXUIElement) throws {
             var writable: DarwinBoolean = false
@@ -123,78 +117,88 @@ final class WindowCatalog: ObservableObject {
                 try set(root, kAXFocusedWindowAttribute, target, operation: "聚焦来源窗口")
             }
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        var nextActivation = ContinuousClock.now
+        var progress = SourceFocusProgress(processID: owner.processID, windowID: source.windowID,
+                                          startedAt: ProcessInfo.processInfo.systemUptime)
         var pendingOperation = ""
-        var confirmedSince: ContinuousClock.Instant?
         while true {
             try Task.checkCancellation()
             guard generation == focusGeneration else { throw CancellationError() }
-            var focusedID: CGWindowID?
+            let attempt = progress.beginAttempt(at: ProcessInfo.processInfo.systemUptime)
             var read = AXError.noValue
-            let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            var onScreen = false
-            var onVisibleSpace = false
+            var observation = SourceFocusProgress.Observation(
+                foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                focusedWindowID: nil, onScreen: false, onVisibleSpace: false, hidden: app.isHidden, minimized: nil)
+            pendingOperation = ""
             do {
                 let entry = try reference.validate()
-                onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
-                onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
-                var activatedByID = false
-                if ContinuousClock.now >= nextActivation, (!onScreen || !onVisibleSpace), !app.isHidden {
+                observation.onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
+                observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
+                if app.isHidden {
+                    if attempt {
+                        try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
+                    }
+                    throw SourceFocusPending(operation: "等待显示来源应用")
+                }
+                if attempt, !observation.onScreen || !observation.onVisibleSpace {
                     // 先请求返回来源 Space，使暂时不可响应的 AX 对象重新可用。
                     try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-                    app.activate(options: [.activateAllWindows])
-                    activatedByID = true
                 }
-                let target = try reference.resolveElement()
-                if ContinuousClock.now >= nextActivation {
-                    selectionReady = false
-                    if app.isHidden {
-                        if !unhideRequested {
-                            try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
-                            unhideRequested = true
-                        }
-                        throw SourceFocusPending(operation: "等待显示来源应用")
-                    }
-                    if let target { try prepare(target); selectionReady = true }
-                    // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
-                    if !activatedByID {
-                        try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-                        app.activate(options: [.activateAllWindows])
-                    }
-                    if let target { try raise(target) }
-                    nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
+                guard let target = try reference.resolveElement() else {
+                    throw SourceFocusPending(operation: "等待来源窗口对象重新可用")
                 }
-                if let target, selectionReady {
-                    var focused: CFTypeRef?
-                    read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
-                    if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {
-                        focusedID = try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self))
+                observation.minimized = try minimized(target)
+                if observation.minimized == true {
+                    if attempt {
+                        try set(target, kAXMinimizedAttribute, kCFBooleanFalse, operation: "恢复来源窗口")
                     }
-                    if frontmostPID == owner.processID, onScreen, onVisibleSpace, focusedID == source.windowID {
-                        if let confirmedSince, ContinuousClock.now - confirmedSince >= .milliseconds(100) { return }
-                        if confirmedSince == nil { confirmedSince = ContinuousClock.now }
-                    } else {
-                        confirmedSince = nil
-                    }
-                    if frontmostPID == owner.processID, onScreen, onVisibleSpace, focusedID != source.windowID {
-                        try selectKeyboardFocus(target)
-                    }
-                } else {
-                    confirmedSince = nil
+                    throw SourceFocusPending(operation: "等待来源窗口完成恢复")
                 }
+                if attempt {
+                    Self.focusLog.debug("Selecting exact source: PID=\(owner.processID), window=\(source.windowID), resolution=\(reference.resolutionState, privacy: .public)")
+                    // 应用激活在精确窗口选择之前完成，避免覆盖后续交付的目标焦点。
+                    if !app.isActive { app.activate(options: []) }
+                    try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
+                    try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                    try raise(target)
+                    try selectKeyboardFocus(target)
+                }
+
+                var focused: CFTypeRef?
+                read = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
+                if read == .cannotComplete { throw SourceFocusPending(operation: "读取来源应用键盘焦点") }
+                if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {
+                    let element = unsafeBitCast(focused, to: AXUIElement.self)
+                    AXUIElementSetMessagingTimeout(element, 0.25)
+                    do {
+                        observation.focusedWindowID = try WindowActivation.windowID(of: element)
+                    } catch is SourceFocusPending {
+                        throw SourceFocusPending(operation: "读取当前键盘焦点窗口标识")
+                    }
+                } else if read != .noValue {
+                    throw RequestError.message("读取来源应用键盘焦点失败（辅助功能错误 \(read.rawValue)）。")
+                }
+                observation.foregroundPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+                observation.hidden = app.isHidden
+                if progress.observe(observation, at: ProcessInfo.processInfo.systemUptime) { return }
             } catch let pending as SourceFocusPending {
-                confirmedSince = nil
+                progress.pending()
                 pendingOperation = pending.operation
-                nextActivation = ContinuousClock.now.advanced(by: .milliseconds(100))
             }
-            guard ContinuousClock.now < deadline else {
-                Self.focusLog.error("Source focus timeout: expectedPID=\(owner.processID), expectedWindow=\(source.windowID), frontmostPID=\(frontmostPID), focusedWindow=\(focusedID ?? 0), onScreen=\(onScreen), axStatus=\(read.rawValue)")
+            guard !progress.expired(at: ProcessInfo.processInfo.systemUptime) else {
+                Self.focusLog.error("Source focus timeout: expectedPID=\(owner.processID), expectedWindow=\(source.windowID), frontmostPID=\(observation.foregroundPID ?? 0), focusedWindow=\(observation.focusedWindowID ?? 0), onScreen=\(observation.onScreen), axStatus=\(read.rawValue)")
                 let foreground = NSWorkspace.shared.frontmostApplication
                 Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")
                 Self.focusLog.error("Pending Accessibility transition: \(pendingOperation, privacy: .public)")
-                Self.focusLog.error("Source window on a currently visible Space: \(onVisibleSpace)")
-                throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
+                Self.focusLog.error("Source window on a currently visible Space: \(observation.onVisibleSpace), resolution=\(reference.resolutionState, privacy: .public)")
+                switch progress.failure(for: observation) {
+                case .hidden: throw RequestError.message("来源应用仍处于隐藏状态，无法定位捕获的窗口。")
+                case .minimized: throw RequestError.message("来源窗口未能完成最小化恢复。")
+                case .space: throw RequestError.message("尚未返回来源窗口所在桌面。")
+                case .foreground: throw RequestError.message("来源应用未能切换到前台。")
+                case .keyboardFocus: throw RequestError.message("来源应用已经显示，但未能将键盘焦点交给捕获的窗口。")
+                case .accessibility: throw RequestError.message("来源应用未能及时提供可验证的窗口焦点。")
+                case nil: throw RequestError.message("来源窗口焦点未能保持稳定。")
+                }
             }
             try await Task.sleep(for: .milliseconds(25))
         }

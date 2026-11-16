@@ -77,6 +77,7 @@ enum NativeFocusDiagnostics {
                 "onActiveSpace": session.panel.isOnActiveSpace, "key": session.panel.isKeyWindow,
                 "frame": NSStringFromRect(session.panel.frame), "sourceWindow": session.source.windowID,
                 "status": session.status, "capturedFrame": session.hasCapturedFrame,
+                "targetResolution": session.focusTarget.resolutionState,
                 "renderer": session.surface.frameView.renderingState
             ]
         }

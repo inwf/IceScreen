@@ -1,0 +1,54 @@
+{
+  "runID": 43889327295,
+  "cases": [
+    {
+      "name": "minimized_hidden_restoration",
+      "processID": 4543,
+      "windowID": 114,
+      "startedAt": "2026-11-16T14:49:55Z",
+      "records": [
+        {
+          "time": "2026-11-16T14:49:57Z",
+          "observation": {
+            "foregroundPID": 4543,
+            "focusedWindowID": 116,
+            "onScreen": true,
+            "onVisibleSpace": true,
+            "hidden": false,
+            "minimized": false
+          }
+        },
+        {
+          "time": "2026-11-16T14:50:00Z",
+          "observation": {
+            "foregroundPID": 4543,
+            "focusedWindowID": 116,
+            "onScreen": true,
+            "onVisibleSpace": true,
+            "hidden": false,
+            "minimized": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "retained_terminal_return",
+      "processID": 4192,
+      "windowID": 56,
+      "startedAt": "2026-11-16T14:49:48Z",
+      "records": [
+        {
+          "time": "2026-11-16T14:49:49Z",
+          "observation": {
+            "foregroundPID": 4192,
+            "focusedWindowID": 56,
+            "onScreen": true,
+            "onVisibleSpace": true,
+            "hidden": false,
+            "minimized": false
+          }
+        }
+      ]
+    }
+  ]
+}

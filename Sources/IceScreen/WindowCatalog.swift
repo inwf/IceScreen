@@ -136,6 +136,13 @@ final class WindowCatalog: ObservableObject {
             do {
                 let entry = try reference.validate()
                 onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
+                var activatedByID = false
+                if ContinuousClock.now >= nextActivation, !onScreen, !app.isHidden {
+                    // 先请求返回来源 Space，使暂时不可响应的 AX 对象重新可用。
+                    try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                    app.activate(options: [.activateAllWindows])
+                    activatedByID = true
+                }
                 let target = try reference.resolveElement()
                 if ContinuousClock.now >= nextActivation {
                     selectionReady = false
@@ -148,8 +155,10 @@ final class WindowCatalog: ObservableObject {
                     }
                     if let target { try prepare(target); selectionReady = true }
                     // 来源身份已验证，跨 Space 请求不依赖当前 AX 窗口列表。
-                    try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
-                    app.activate(options: [.activateAllWindows])
+                    if !activatedByID {
+                        try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                        app.activate(options: [.activateAllWindows])
+                    }
                     if let target { try raise(target) }
                     nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
                 }

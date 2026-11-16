@@ -4,16 +4,20 @@ import QuartzCore
 import IceCore
 import ImageIO
 import UniformTypeIdentifiers
+import Darwin
 
 @main
 enum PanelEventChecks {
     @MainActor static func main() {
+        setbuf(stdout, nil)
         let application = NSApplication.shared
         if CommandLine.arguments.dropFirst().first == "--foreground-fixture" {
             runForegroundFixture(application)
             return
         }
-        precondition(CommandLine.arguments.count == 3, "Pass the foreground application path and completion file.")
+        precondition(CommandLine.arguments.count == 4, "Pass the foreground application path, completion file, and project directory.")
+        precondition(FileManager.default.changeCurrentDirectoryPath(CommandLine.arguments[3]),
+                     "The native checks require the project working directory.")
         application.setActivationPolicy(.accessory)
         application.finishLaunching()
         guard let screen = NSScreen.main else { fatalError("Panel checks require an active macOS graphical session.") }

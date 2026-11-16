@@ -38,7 +38,7 @@ stdout="$PWD/.build/checks/panel-events.stdout"
 stderr="$PWD/.build/checks/panel-events.stderr"
 rm -f "$completion" "$stdout" "$stderr"
 open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/checks/PanelChecks.app" \
-    --args "$PWD/.build/checks/Foreground.app" "$completion"
+    --args "$PWD/.build/checks/Foreground.app" "$completion" "$PWD"
 cat "$stdout" "$stderr"
 if [[ ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
     echo "Native panel checks did not complete successfully." >&2

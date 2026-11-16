@@ -165,4 +165,6 @@ CONFIGURATION=debug bash scripts/build.sh
 
 `IceCore` 包含跨平台的坐标、命令行、偏好和空闲检测逻辑。Linux 可以运行 `swift test`；完整桌面应用的编译、签名和交互验证需要 macOS。
 
+CI 检查核心逻辑、图标与安装背景、原生浮窗事件、检测命令、媒体辅助进程和安装包。后台浮窗检查创建另一个实际前台应用，分别验证 WindowServer 命中及 AppKit 队列点击后的焦点保持。捕获授权、真实来源窗口定位、硬件手势、多显示器和 CPU／内存／功耗测量需要实际设备验收，CI 成功不代表这些检查已经完成。
+
 参见 [贡献说明](CONTRIBUTING.md)。

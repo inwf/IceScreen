@@ -1,6 +1,8 @@
 # 参与开发
 
-IceScreen 使用 Swift Package Manager。修改前阅读 README，运行 `swift test`。macOS 相关改动还需执行 `bash scripts/build.sh`。输入与浮窗改动还需在 macOS 图形会话中运行 `bash scripts/check-panel-events.sh`。
+IceScreen 使用 Swift Package Manager。修改前阅读 README，运行 `swift test`。macOS 相关改动还需执行 `bash scripts/build.sh`。输入与浮窗改动还需在 macOS 图形会话中运行 `bash scripts/check-panel-events.sh`。该检查以原生应用包启动，创建独立前台应用，验证后台浮窗的 WindowServer 命中、前后顺序、鼠标穿透、隐藏，以及 AppKit 分发点击后前台进程与非关键窗口状态保持原值；随后执行活动应用中的控件与渲染检查。任何断言失败或缺少完成记录都会返回失败。AppKit 队列中的受控事件不代表硬件输入、系统权限或来源定位已完成验收。
+
+图标相关改动还需执行 `uv run scripts/test-app-icon.py`。构建中的 `check-app-icon.py` 使用 ICNS 解码库检查全部十种普通与 Retina 表示，包括系统 ARGB、PNG 和旧版 RGB/掩码格式；缺少表示、像素变化、尺寸错误或文件损坏都返回失败。
 
 检测命令相关改动还需运行 `python3 scripts/check-detection-command.py .build/debug/IceScreen`，验证真实命令执行和子进程清理。
 

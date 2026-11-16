@@ -68,6 +68,8 @@ jobs:
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix cairo)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-/usr/local/lib:/usr/lib}" >> "$GITHUB_ENV"
       - name: Test installation background generation
         run: uv run scripts/test-dmg-background.py
+      - name: Test complete icon validation and rejection cases
+        run: uv run scripts/test-app-icon.py
       - name: Select toolchain
         run: |
           xcodebuild -version
@@ -76,7 +78,8 @@ jobs:
           xcrun --sdk macosx --show-sdk-version
       - name: Test
         run: swift test
-      - name: Check native panel event targeting
+      - name: Check background and active native panel event targeting
+        timeout-minutes: 10
         run: bash scripts/check-panel-events.sh
       - name: Check detection command processes
         run: python3 scripts/check-detection-command.py .build/debug/IceScreen

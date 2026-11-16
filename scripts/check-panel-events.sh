@@ -18,4 +18,27 @@ done
 swiftc -parse-as-library -I .build/checks -L .build/checks -lIceCore \
     -Xlinker -rpath -Xlinker "$PWD/.build/checks" \
     "${app_sources[@]}" scripts/check-panel-events.swift -o .build/checks/panel-events
-.build/checks/panel-events
+codesign --force --sign - .build/checks/libIceCore.dylib
+for name in PanelChecks Foreground; do
+    bundle="$PWD/.build/checks/$name.app"
+    rm -rf "$bundle"
+    mkdir -p "$bundle/Contents/MacOS"
+    cp .build/checks/panel-events "$bundle/Contents/MacOS/panel-events"
+    cp scripts/panel-checks.plist "$bundle/Contents/Info.plist"
+    if [[ "$name" == "Foreground" ]]; then
+        /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier org.icescreen.checks.foreground' \
+            -c 'Set :CFBundleName IceScreen Foreground Checks' -c 'Set :LSUIElement false' "$bundle/Contents/Info.plist"
+    fi
+    codesign --force --sign - "$bundle"
+done
+completion="$PWD/.build/checks/panel-events.result"
+stdout="$PWD/.build/checks/panel-events.stdout"
+stderr="$PWD/.build/checks/panel-events.stderr"
+rm -f "$completion" "$stdout" "$stderr"
+open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/checks/PanelChecks.app" \
+    --args "$PWD/.build/checks/Foreground.app" "$completion"
+cat "$stdout" "$stderr"
+if [[ ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
+    echo "Native panel checks did not complete successfully." >&2
+    exit 1
+fi

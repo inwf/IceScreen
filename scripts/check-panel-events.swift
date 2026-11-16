@@ -9,10 +9,16 @@ import UniformTypeIdentifiers
 enum PanelEventChecks {
     @MainActor static func main() {
         let application = NSApplication.shared
+        if CommandLine.arguments.dropFirst().first == "--foreground-fixture" {
+            runForegroundFixture(application)
+            return
+        }
+        precondition(CommandLine.arguments.count == 3, "Pass the foreground application path and completion file.")
         application.setActivationPolicy(.accessory)
         application.finishLaunching()
-        application.activate(ignoringOtherApps: true)
         guard let screen = NSScreen.main else { fatalError("Panel checks require an active macOS graphical session.") }
+        checkBackgroundPanels(application, screen: screen)
+        application.activate(ignoringOtherApps: true)
         let frame = NSRect(x: screen.visibleFrame.midX - 90, y: screen.visibleFrame.midY - 70, width: 180, height: 140)
         let lower = makePanel(frame)
         let upper = makePanel(frame.offsetBy(dx: 20, dy: 20))
@@ -48,6 +54,119 @@ enum PanelEventChecks {
         checkPreviewTransition(in: screen.visibleFrame)
         checkAppearancePreview(in: screen.visibleFrame)
         print("Passed 5 native NSPanel hit-testing checks.")
+        try! "passed\n".write(toFile: CommandLine.arguments[2], atomically: true, encoding: .utf8)
+    }
+
+    @MainActor private static func runForegroundFixture(_ application: NSApplication) {
+        application.setActivationPolicy(.regular)
+        application.finishLaunching()
+        guard let screen = NSScreen.main else { fatalError("The foreground fixture requires WindowServer.") }
+        let window = NSWindow(contentRect: NSRect(x: screen.visibleFrame.midX - 260, y: screen.visibleFrame.midY - 180,
+                                                 width: 520, height: 360),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "IceScreen foreground input checks"
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        application.activate(ignoringOtherApps: true)
+        withExtendedLifetime(window) { application.run() }
+    }
+
+    @MainActor private static func wait(_ message: String, until condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(10)
+        while !condition() {
+            precondition(Date() < deadline, message)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+    }
+
+    @MainActor private static func checkBackgroundPanels(_ application: NSApplication, screen: NSScreen) {
+        var foreground: NSRunningApplication?
+        var launchError: Error?
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = ["--foreground-fixture"]
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: CommandLine.arguments[1]), configuration: configuration) { app, error in
+            DispatchQueue.main.async { foreground = app; launchError = error }
+        }
+        wait("The foreground fixture did not launch.") { foreground != nil || launchError != nil }
+        if let launchError { fatalError("Foreground fixture launch failed: \(launchError)") }
+        guard let foreground else { fatalError("Missing foreground fixture process.") }
+        defer {
+            precondition(foreground.terminate(), "The foreground fixture must terminate after checks.")
+            wait("The foreground fixture did not exit.") { foreground.isTerminated }
+        }
+        let pid = foreground.processIdentifier
+        wait("The independent fixture must own foreground focus.") {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier == pid && !application.isActive
+        }
+        let frame = NSRect(x: screen.visibleFrame.midX - 180, y: screen.visibleFrame.midY - 120, width: 360, height: 240)
+        let lower = makePanel(frame)
+        let upper = makePanel(frame.offsetBy(dx: 20, dy: 20))
+        defer { lower.close(); upper.close() }
+        let panels = [lower, upper]
+        func assertBackground() {
+            precondition(!application.isActive && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                         "Background panel interaction must preserve the independent foreground process.")
+            precondition(panels.allSatisfy { !$0.isKeyWindow && !$0.isMainWindow },
+                         "Background panels must stay non-key and non-main.")
+        }
+        let point = NSPoint(x: frame.midX, y: frame.midY)
+        lower.orderFrontRegardless()
+        upper.orderFrontRegardless()
+        wait("WindowServer must target the upper background panel.") {
+            PanelHitTesting.frontmost(at: point, among: panels) === upper
+        }
+        assertBackground()
+        lower.orderFrontRegardless()
+        wait("Background hit testing must follow WindowServer ordering.") {
+            PanelHitTesting.frontmost(at: point, among: panels) === lower
+        }
+        assertBackground()
+        lower.ignoresMouseEvents = true
+        settle()
+        precondition(PanelHitTesting.frontmost(at: point, among: panels) === upper,
+                     "A mouse-through background panel must not consume the hit target.")
+        upper.orderOut(nil)
+        settle()
+        precondition(PanelHitTesting.frontmost(at: point, among: panels) == nil,
+                     "Hidden and mouse-through background panels must not receive hover actions.")
+        assertBackground()
+        lower.ignoresMouseEvents = false
+        let surface = PanelSurface(frame: NSRect(origin: .zero, size: frame.size))
+        lower.contentView = surface
+        surface.layoutSubtreeIfNeeded()
+        var clicks = 0
+        surface.onContentClick = { clicks += 1 }
+        for hovered in [false, true] {
+            surface.setHovered(hovered)
+            surface.layoutSubtreeIfNeeded()
+            let local = surface.convert(NSPoint(x: 180, y: 120), to: nil)
+            precondition(surface.target(atWindowPoint: local) is PanelInput,
+                         "Background content must target the real PanelInput.")
+            func event(_ type: NSEvent.EventType) -> NSEvent {
+                NSEvent.mouseEvent(with: type, location: local, modifierFlags: [],
+                                   timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: lower.windowNumber, context: nil, eventNumber: 0,
+                                   clickCount: 1, pressure: 1)!
+            }
+            let before = clicks
+            assertBackground()
+            // 通过真实 AppKit 分发和事件跟踪检查点击；硬件输入另行验收。
+            application.postEvent(event(.leftMouseUp), atStart: true)
+            application.sendEvent(event(.leftMouseDown))
+            precondition(clicks == before + 1, "A background first click must dispatch exactly once.")
+            settle()
+            assertBackground()
+        }
+        let outside = NSPoint(x: frame.minX - 30, y: frame.midY)
+        precondition(PanelHitTesting.frontmost(at: outside, among: panels) == nil,
+                     "Input outside background panels must not target them.")
+        lower.orderOut(nil)
+        settle()
+        precondition(PanelHitTesting.frontmost(at: point, among: panels) == nil,
+                     "Closing all background panels must release the WindowServer target.")
+        assertBackground()
+        print("Passed background WindowServer ordering, mouse-through, hiding, AppKit first-click dispatch, and foreground PID preservation checks.")
     }
 
     @MainActor private static func checkAppearancePreview(in screen: NSRect) {

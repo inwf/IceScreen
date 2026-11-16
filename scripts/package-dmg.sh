@@ -33,11 +33,11 @@ uv run scripts/render-dmg-background.py --check
 ditto "$app_dir" "$staging_dir/content/IceScreen.app"
 ln -s /Applications "$staging_dir/content/Applications"
 cp .build/dmg-background.tiff "$staging_dir/content/.background/"
-cp "$app_dir/Contents/Resources/AppIcon.icns" "$staging_dir/content/.VolumeIcon.icns"
 hdiutil create -volname IceScreen -srcfolder "$staging_dir/content" -fs HFS+ -format UDRW -ov "$image_path"
 hdiutil attach -nobrowse -noverify -mountpoint "$mount_dir" "$image_path"
 mounted=1
 osascript scripts/configure-dmg.applescript "$mount_dir" "$mount_dir/.background/dmg-background.tiff"
+cp "$app_dir/Contents/Resources/AppIcon.icns" "$mount_dir/.VolumeIcon.icns"
 xcrun SetFile -a C "$mount_dir"
 hdiutil detach "$mount_dir"
 mounted=0

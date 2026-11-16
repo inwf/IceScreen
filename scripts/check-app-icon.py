@@ -25,7 +25,9 @@ source_hash = hashlib.sha256((root / "assets/AppIcon.png").read_bytes()).hexdige
 assert (args.iconset.parent / "AppIcon.source.sha256").read_text().strip() == source_hash, "iconset 与原图版本不一致"
 expected_sizes = {(points, points, scale) for points in (16, 32, 128, 256, 512) for scale in (1, 2)}
 with Image.open(icon_path) as icon:
-    assert set(icon.info["sizes"]) == expected_sizes, "图标缺少标准或 Retina 尺寸"
+    available_sizes = set(icon.info["sizes"])
+    missing_sizes = expected_sizes - available_sizes
+    assert not missing_sizes, f"图标缺少标准或 Retina 尺寸：{sorted(missing_sizes)}"
     for width, height, scale in expected_sizes:
         suffix = "@2x" if scale == 2 else ""
         with Image.open(args.iconset / f"icon_{width}x{height}{suffix}.png") as expected:

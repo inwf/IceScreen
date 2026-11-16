@@ -30,20 +30,28 @@ enum SourceFocusChecks {
             withExtendedLifetime(windows) { app.run() }
             return
         }
-        precondition(arguments.count == 3, "Pass the fixture directory, completion file, and project directory.")
+        precondition(arguments.count == 4 && ["terminal", "interactions"].contains(arguments[3]),
+                     "Pass the fixture directory, completion file, project directory, and scenario.")
         precondition(FileManager.default.changeCurrentDirectoryPath(arguments[2]))
+        try! NativeFocusDiagnostics.configure(at: URL(fileURLWithPath: arguments[1] + ".jsonl"))
+        NativeFocusDiagnostics.begin(arguments[3])
         precondition(AXIsProcessTrusted(), "Source focus checks require Accessibility permission for this test executable.")
         precondition(CGPreflightScreenCaptureAccess(), "Source focus checks require Screen Recording permission.")
         app.setActivationPolicy(.accessory)
         app.finishLaunching()
         Task { @MainActor in
             do {
-                try await checkTerminalFullScreen(in: URL(fileURLWithPath: arguments[0]))
-                try await check(in: URL(fileURLWithPath: arguments[0]))
-                print("Passed cross-process source focus, repeated clicks, double-click close, disabled clicks, and closed-source checks.")
+                if arguments[3] == "terminal" {
+                    try await checkTerminalFullScreen(in: URL(fileURLWithPath: arguments[0]))
+                } else {
+                    try await check(in: URL(fileURLWithPath: arguments[0]))
+                }
+                NativeFocusDiagnostics.snapshot("passed")
+                print("Passed source focus scenario: \(arguments[3]).")
                 try "passed\n".write(toFile: arguments[1], atomically: true, encoding: .utf8)
                 app.terminate(nil)
             } catch {
+                NativeFocusDiagnostics.snapshot("failed")
                 fputs("Source focus check failed: \(error)\n", stderr)
                 exit(1)
             }
@@ -58,9 +66,11 @@ enum SourceFocusChecks {
         configuration.createsNewApplicationInstance = true
         let sourceApp = try await NSWorkspace.shared.openApplication(at: directory.appendingPathComponent("Source.app"),
                                                                      configuration: configuration)
+        NativeFocusDiagnostics.track("source", application: sourceApp)
         defer { sourceApp.terminate() }
         let otherApp = try await NSWorkspace.shared.openApplication(at: directory.appendingPathComponent("Other.app"),
                                                                     configuration: configuration)
+        NativeFocusDiagnostics.track("other", application: otherApp)
         defer { otherApp.terminate() }
         let catalog = WindowCatalog()
         var source: SCWindow?
@@ -75,13 +85,17 @@ enum SourceFocusChecks {
             if source != nil && other != nil { break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        guard let source, let other else { fatalError("Fixture windows did not appear in ScreenCaptureKit.") }
+        guard let source, let other else {
+            NativeFocusDiagnostics.snapshot("fixture_discovery_failed")
+            fatalError("Fixture windows did not appear in ScreenCaptureKit.")
+        }
         var preferences = Preferences()
         preferences.autoHide = false
         preferences.clickToFocus = true
         let capturedTarget = try SourceWindowRecovery.element(pid: sourceApp.processIdentifier, id: source.windowID)
         let original = try SourceWindowRecovery.frame(capturedTarget)
         let session = CaptureSession(source: source, viewport: .full, preferences: preferences, offset: 0)
+        NativeFocusDiagnostics.track(session)
         defer { session.close() }
         var confirmations = 0
         session.onFocus = { window in
@@ -145,10 +159,13 @@ enum SourceFocusChecks {
 
         let target = focusedWindow(sourceApp)
         print("Checking minimized and hidden source restoration.")
+        NativeFocusDiagnostics.begin("minimized_hidden_restoration")
         precondition(AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success)
         precondition(AXUIElementSetAttributeValue(session.focusTarget.root, kAXHiddenAttribute as CFString, kCFBooleanTrue) == .success,
                      "The real source application must accept the Accessibility hide request.")
         try await wait { sourceApp.isHidden }
+        session.refreshSourceState()
+        precondition(session.panel.isVisible, "Geometry monitoring must retain the panel while its source is hidden and minimized.")
         print("Source is actually hidden; clicking the floating panel to restore it.")
         click(session)
         try await wait { confirmations == before + 1 }
@@ -165,6 +182,7 @@ enum SourceFocusChecks {
 
         try await catalog.focus(other)
         print("Checking double-click source return and panel close.")
+        NativeFocusDiagnostics.begin("double_click_close")
         click(session)
         click(session, count: 2)
         try await wait { !session.panel.isVisible }
@@ -172,6 +190,7 @@ enum SourceFocusChecks {
                      "Double-click may close the panel only after source focus is confirmed.")
 
         var button: CFTypeRef?
+        NativeFocusDiagnostics.begin("closed_source_rejection")
         precondition(AXUIElementCopyAttributeValue(target, kAXCloseButtonAttribute as CFString, &button) == .success)
         guard let button, CFGetTypeID(button) == AXUIElementGetTypeID() else { fatalError("Missing fixture close button.") }
         precondition(AXUIElementPerformAction(unsafeBitCast(button, to: AXUIElement.self), kAXPressAction as CFString) == .success)
@@ -196,12 +215,14 @@ enum SourceFocusChecks {
         terminalConfiguration.createsNewApplicationInstance = true
         let terminal = try await NSWorkspace.shared.openApplication(
             at: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"), configuration: terminalConfiguration)
+        NativeFocusDiagnostics.track("terminal", application: terminal)
         defer { terminal.terminate() }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = ["--fixture"]
         configuration.createsNewApplicationInstance = true
         let video = try await NSWorkspace.shared.openApplication(at: directory.appendingPathComponent("Other.app"),
                                                                 configuration: configuration)
+        NativeFocusDiagnostics.track("fullscreen", application: video)
         defer { video.terminate() }
         let catalog = WindowCatalog()
         var source: SCWindow?
@@ -225,6 +246,7 @@ enum SourceFocusChecks {
         preferences.autoHide = false
         preferences.clickToFocus = true
         let session = CaptureSession(source: source, viewport: .full, preferences: preferences, offset: 0)
+        NativeFocusDiagnostics.track(session)
         defer { session.close() }
         guard let target = session.focusTarget.retainedElement else {
             fatalError("The actual Terminal AX window must be retained before leaving its Space.")
@@ -242,9 +264,21 @@ enum SourceFocusChecks {
         try await catalog.focus(videoSource, retainedTarget: videoTarget)
         print("Focused the exact full-screen fixture window.")
         guard let videoElement = videoTarget.retainedElement else { fatalError("Missing focused full-screen fixture AX window.") }
+        NativeFocusDiagnostics.begin("enter_fullscreen_space")
         precondition(AXUIElementSetAttributeValue(videoElement, "AXFullScreen" as CFString, kCFBooleanTrue) == .success,
                      "The native fixture must enter an actual full-screen Space.")
-        try await wait { isFullScreen(videoElement) && video.isActive && !isOnScreen(source.windowID) }
+        try await wait {
+            let videoVisible = try WindowActivation.isOnVisibleSpace(videoSource.windowID)
+            let sourceVisible = try WindowActivation.isOnVisibleSpace(source.windowID)
+            return isFullScreen(videoElement) && video.isActive && videoVisible && !sourceVisible
+                && !isOnScreen(source.windowID) && session.panel.isOnActiveSpace
+                && isOnScreen(CGWindowID(session.panel.windowNumber))
+        }
+        NativeFocusDiagnostics.begin("terminal_off_space")
+        let originalSpaces = try WindowActivation.spaceIDs(for: source.windowID)
+        precondition(!originalSpaces.isEmpty)
+        let beforeReturn = try WindowActivation.isOnVisibleSpace(source.windowID)
+        precondition(!beforeReturn, "Terminal must actually be on an inactive Space before the panel click.")
         session.refreshSourceState()
         precondition(session.panel.isVisible && isOnScreen(CGWindowID(session.panel.windowNumber)),
                      "The floating panel must remain physically on screen while Terminal is in another Space.")
@@ -255,6 +289,7 @@ enum SourceFocusChecks {
         let listed = try windows.contains { try WindowActivation.windowID(of: $0) == source.windowID }
         precondition(!listed, "The test must reproduce Terminal's off-Space AX window omission.")
         print("Reproduced actual Terminal off-Space AX omission: status=\(status.rawValue), windows=\(windows.count).")
+        NativeFocusDiagnostics.begin("retained_terminal_return")
         click(session)
         try await wait { confirmations == 1 }
         precondition(terminal.isActive && isOnScreen(source.windowID) && session.panel.isVisible,
@@ -265,13 +300,23 @@ enum SourceFocusChecks {
         let afterReturn = try SourceWindowRecovery.frame(target)
         precondition(afterReturn == original && isFullScreen(videoElement),
                      "Returning to Terminal must preserve its frame and leave the video window full-screen.")
+        let afterSpaces = try WindowActivation.spaceIDs(for: source.windowID)
+        precondition(afterSpaces == originalSpaces, "Source focus must switch desktops without moving the Terminal window between Spaces.")
+        NativeFocusDiagnostics.begin("return_to_fullscreen_space")
         try await catalog.focus(videoSource, retainedTarget: videoTarget)
-        try await wait { video.isActive && !isOnScreen(source.windowID) }
+        try await wait {
+            let videoVisible = try WindowActivation.isOnVisibleSpace(videoSource.windowID)
+            let sourceVisible = try WindowActivation.isOnVisibleSpace(source.windowID)
+            return video.isActive && isFullScreen(videoElement) && videoVisible && !sourceVisible && !isOnScreen(source.windowID)
+        }
+        NativeFocusDiagnostics.begin("uncached_terminal_return")
         try await catalog.focus(source)
         precondition(terminal.isActive && isOnScreen(source.windowID) && isFullScreen(videoElement),
                      "Window-ID-first lookup must return across Spaces even without a retained AX element.")
         let afterUncachedReturn = try SourceWindowRecovery.frame(target)
         precondition(afterUncachedReturn == original, "Uncached focus must not move the source window.")
+        let afterUncachedSpaces = try WindowActivation.spaceIDs(for: source.windowID)
+        precondition(afterUncachedSpaces == originalSpaces, "Uncached focus must preserve the Terminal Space identity.")
         print("Passed actual Terminal/full-screen Space return, retained and uncached AX lookup, exact window ID, and frame preservation checks.")
         precondition(AXUIElementSetAttributeValue(videoElement, "AXFullScreen" as CFString, kCFBooleanFalse) == .success)
         try await wait { !isFullScreen(videoElement) }
@@ -299,9 +344,16 @@ enum SourceFocusChecks {
         NSApp.sendEvent(event(.leftMouseDown))
     }
 
-    @MainActor private static func wait(file: StaticString = #file, line: UInt = #line, _ condition: () -> Bool) async throws {
+    @MainActor private static func wait(file: StaticString = #file, line: UInt = #line, _ condition: () throws -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(8))
-        while !condition() {
+        var nextSnapshot = ContinuousClock.now.advanced(by: .seconds(1))
+        while !(try condition()) {
+            if ContinuousClock.now >= nextSnapshot {
+                NativeFocusDiagnostics.snapshot("waiting", file: file, line: line)
+                nextSnapshot = ContinuousClock.now.advanced(by: .seconds(1))
+            }
+            if ContinuousClock.now >= deadline { NativeFocusDiagnostics.snapshot("timeout", file: file, line: line) }
+            if let failure = NativeFocusDiagnostics.captureFailure { throw RequestError.message(failure) }
             precondition(ContinuousClock.now < deadline, "Timed out waiting for the real source window.", file: file, line: line)
             try await Task.sleep(for: .milliseconds(25))
         }

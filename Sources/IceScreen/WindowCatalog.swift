@@ -126,6 +126,7 @@ final class WindowCatalog: ObservableObject {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         var nextActivation = ContinuousClock.now
         var pendingOperation = ""
+        var confirmedSince: ContinuousClock.Instant?
         while true {
             try Task.checkCancellation()
             guard generation == focusGeneration else { throw CancellationError() }
@@ -133,11 +134,13 @@ final class WindowCatalog: ObservableObject {
             var read = AXError.noValue
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             var onScreen = false
+            var onVisibleSpace = false
             do {
                 let entry = try reference.validate()
                 onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
+                onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
                 var activatedByID = false
-                if ContinuousClock.now >= nextActivation, !onScreen, !app.isHidden {
+                if ContinuousClock.now >= nextActivation, (!onScreen || !onVisibleSpace), !app.isHidden {
                     // 先请求返回来源 Space，使暂时不可响应的 AX 对象重新可用。
                     try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
                     app.activate(options: [.activateAllWindows])
@@ -168,12 +171,20 @@ final class WindowCatalog: ObservableObject {
                     if read == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() {
                         focusedID = try WindowActivation.windowID(of: unsafeBitCast(focused, to: AXUIElement.self))
                     }
-                    if frontmostPID == owner.processID, onScreen, focusedID == source.windowID { return }
-                    if frontmostPID == owner.processID, onScreen, focusedID != source.windowID {
+                    if frontmostPID == owner.processID, onScreen, onVisibleSpace, focusedID == source.windowID {
+                        if let confirmedSince, ContinuousClock.now - confirmedSince >= .milliseconds(100) { return }
+                        if confirmedSince == nil { confirmedSince = ContinuousClock.now }
+                    } else {
+                        confirmedSince = nil
+                    }
+                    if frontmostPID == owner.processID, onScreen, onVisibleSpace, focusedID != source.windowID {
                         try selectKeyboardFocus(target)
                     }
+                } else {
+                    confirmedSince = nil
                 }
             } catch let pending as SourceFocusPending {
+                confirmedSince = nil
                 pendingOperation = pending.operation
                 nextActivation = ContinuousClock.now.advanced(by: .milliseconds(100))
             }
@@ -182,6 +193,7 @@ final class WindowCatalog: ObservableObject {
                 let foreground = NSWorkspace.shared.frontmostApplication
                 Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")
                 Self.focusLog.error("Pending Accessibility transition: \(pendingOperation, privacy: .public)")
+                Self.focusLog.error("Source window on a currently visible Space: \(onVisibleSpace)")
                 throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
             }
             try await Task.sleep(for: .milliseconds(25))

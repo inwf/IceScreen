@@ -78,14 +78,26 @@ jobs:
           xcrun --sdk macosx --show-sdk-version
       - name: Test
         run: swift test
-      - name: Check background and active native panel event targeting
-        timeout-minutes: 10
-        run: bash scripts/check-panel-events.sh
       - name: Check detection command processes
         run: python3 scripts/check-detection-command.py .build/debug/IceScreen
-      - name: Check native source focus and full-screen Space return
-        timeout-minutes: 10
-        run: bash scripts/check-source-focus.sh --ci
+      - name: Check native panels, source focus, and full-screen Spaces
+        timeout-minutes: 15
+        run: bash scripts/check-native-tests.sh --ci
+      - name: Save native check diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IceScreen-native-diagnostics
+          path: |
+            .build/checks/*.stdout
+            .build/checks/*.stderr
+            .build/checks/*.result
+            .build/focus-checks/*.stdout
+            .build/focus-checks/*.stderr
+            .build/focus-checks/*.result
+            .build/focus-checks/*.jsonl
+          if-no-files-found: warn
+          retention-days: 3
       - name: Build universal application and DMG
         run: UNIVERSAL=1 bash scripts/build.sh
       - name: Verify application bundle

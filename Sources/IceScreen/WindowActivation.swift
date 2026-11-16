@@ -14,6 +14,9 @@ final class WindowActivation {
     private typealias PostFocusEvent = @convention(c) (UnsafePointer<ProcessSerialNumber>, UnsafeRawPointer) -> Int32
     private typealias GetWindowID = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
     private typealias GetProcess = @convention(c) (pid_t, UnsafeMutablePointer<ProcessSerialNumber>) -> Int32
+    private typealias MainConnection = @convention(c) () -> Int32
+    private typealias CopyWindowSpaces = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
+    private typealias CopyDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
 
     private static let connection = Result { try WindowActivation() }
     private let library: UnsafeMutableRawPointer
@@ -21,6 +24,9 @@ final class WindowActivation {
     private let postFocusEvent: PostFocusEvent
     private let getWindowID: GetWindowID
     private let getProcess: GetProcess
+    private let mainConnection: MainConnection
+    private let copyWindowSpaces: CopyWindowSpaces
+    private let copyDisplaySpaces: CopyDisplaySpaces
 
     private init() throws {
         guard let library = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY | RTLD_LOCAL) else {
@@ -34,7 +40,10 @@ final class WindowActivation {
         guard let front = dlsym(library, "_SLPSSetFrontProcessWithOptions"),
               let event = dlsym(library, "SLPSPostEventRecordTo"),
               let window = dlsym(processImage, "_AXUIElementGetWindow"),
-              let process = dlsym(processImage, "GetProcessForPID") else {
+              let process = dlsym(processImage, "GetProcessForPID"),
+              let main = dlsym(library, "SLSMainConnectionID"),
+              let spaces = dlsym(library, "SLSCopySpacesForWindows"),
+              let displays = dlsym(library, "SLSCopyManagedDisplaySpaces") else {
             dlclose(library)
             throw RequestError.message("当前系统缺少窗口定位接口。")
         }
@@ -43,6 +52,9 @@ final class WindowActivation {
         postFocusEvent = unsafeBitCast(event, to: PostFocusEvent.self)
         getWindowID = unsafeBitCast(window, to: GetWindowID.self)
         getProcess = unsafeBitCast(process, to: GetProcess.self)
+        mainConnection = unsafeBitCast(main, to: MainConnection.self)
+        copyWindowSpaces = unsafeBitCast(spaces, to: CopyWindowSpaces.self)
+        copyDisplaySpaces = unsafeBitCast(displays, to: CopyDisplaySpaces.self)
     }
 
     deinit { dlclose(library) }
@@ -73,6 +85,36 @@ final class WindowActivation {
         withUnsafeBytes(of: &identifier) { record.replaceSubrange(0x3c..<0x40, with: $0) }
         let posted = record.withUnsafeBytes { connection.postFocusEvent(&process, $0.baseAddress!) }
         guard posted == noErr else { throw RequestError.message("系统无法交付来源窗口焦点（\(posted)）。") }
+    }
+
+    static func spaceIDs(for windowID: CGWindowID) throws -> [UInt64] {
+        let connection = try connection.get()
+        let windows = [NSNumber(value: windowID)] as CFArray
+        guard let value = connection.copyWindowSpaces(connection.mainConnection(), 0x7, windows)?.takeRetainedValue(),
+              let spaces = value as? [NSNumber] else {
+            throw RequestError.message("无法读取来源窗口所在桌面。")
+        }
+        return spaces.map(\.uint64Value)
+    }
+
+    static func visibleSpaceIDs() throws -> [UInt64] {
+        let connection = try connection.get()
+        guard let value = connection.copyDisplaySpaces(connection.mainConnection())?.takeRetainedValue(),
+              let displays = value as? [[String: Any]], !displays.isEmpty else {
+            throw RequestError.message("无法读取当前显示器的桌面状态。")
+        }
+        return try displays.map { display in
+            guard let space = display["Current Space"] as? [String: Any],
+                  let identifier = space["id64"] as? NSNumber else {
+                throw RequestError.message("系统返回的当前桌面状态不完整。")
+            }
+            return identifier.uint64Value
+        }
+    }
+
+    static func isOnVisibleSpace(_ windowID: CGWindowID) throws -> Bool {
+        let visible = Set(try visibleSpaceIDs())
+        return try spaceIDs(for: windowID).contains { visible.contains($0) }
     }
 }
 #endif

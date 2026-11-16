@@ -194,7 +194,8 @@ enum PanelEventChecks {
         preview.layoutSubtreeIfNeeded()
         let deadline = Date().addingTimeInterval(3)
         while !rendered {
-            precondition(Date() < deadline, "Appearance sample must render through the real Metal renderer.")
+            precondition(preview.surface.frameView.renderFailure == nil, preview.surface.frameView.renderingState)
+            precondition(Date() < deadline, "Appearance sample must render through the real Metal renderer. \(preview.surface.frameView.renderingState)")
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }
         precondition(preview.surface.layer!.cornerRadius == 30 && abs(preview.surface.alphaValue - 0.4) < 0.001)
@@ -273,7 +274,8 @@ enum PanelEventChecks {
             preview.layoutSubtreeIfNeeded()
             let deadline = Date().addingTimeInterval(3)
             while !rendered {
-                precondition(Date() < deadline, "An imported image must render through the real Metal path.")
+                precondition(preview.surface.frameView.renderFailure == nil, preview.surface.frameView.renderingState)
+                precondition(Date() < deadline, "An imported image must render through the real Metal path. \(preview.surface.frameView.renderingState)")
                 RunLoop.main.run(until: Date().addingTimeInterval(0.01))
             }
             precondition(abs(preview.surface.frame.width / preview.surface.frame.height - 2) < 0.001)

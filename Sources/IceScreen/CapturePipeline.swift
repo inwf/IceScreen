@@ -5,6 +5,7 @@ import CoreImage
 import Metal
 import QuartzCore
 import IceCore
+import OSLog
 
 final class FrameMailbox: @unchecked Sendable {
     private let lock = NSLock()
@@ -265,6 +266,7 @@ private final class FrameRenderer {
 
 @MainActor
 final class FrameView: NSView {
+    private static let log = Logger(subsystem: "org.icescreen.app", category: "FrameRenderer")
     struct Enhancement: Equatable {
         var enabled = false
         var contrast = Preferences().contrastStrength
@@ -275,6 +277,9 @@ final class FrameView: NSView {
     private var current: CVPixelBuffer?
     private let inFlight = DispatchSemaphore(value: 2)
     private var frameGeneration = 0
+    private var renderPending = false
+    private var renderRetry: Task<Void, Never>?
+    private(set) var renderFailure: String?
     var onFirstFrameRendered: (() -> Void)?
     var enhancement = Enhancement() { didSet { if oldValue != enhancement { render() } } }
     var enhanced: Bool {
@@ -306,15 +311,37 @@ final class FrameView: NSView {
 
     func display(_ buffer: CVPixelBuffer) { current = buffer; render() }
     func redraw() { render() }
-    func releaseFrame() { frameGeneration += 1; current = nil }
+    func releaseFrame() {
+        frameGeneration += 1
+        current = nil
+        renderPending = false
+        renderRetry?.cancel()
+        renderRetry = nil
+        renderFailure = nil
+    }
+
+    var renderingState: String {
+        "windowVisible=\(window?.isVisible == true), windowAlpha=\(window?.alphaValue ?? 0), bounds=\(bounds), drawableSize=\(metalLayer.drawableSize), pending=\(renderPending), error=\(renderFailure ?? "none")"
+    }
 
     private func render() {
         guard let current, window?.isVisible == true, window?.alphaValue ?? 0 > 0,
-              bounds.width > 0, bounds.height > 0,
-              inFlight.wait(timeout: .now()) == .success else { return }
+              bounds.width > 0, bounds.height > 0 else { return }
+        guard inFlight.wait(timeout: .now()) == .success else { renderPending = true; return }
         guard let drawable = metalLayer.nextDrawable(), let command = renderer.commands.makeCommandBuffer() else {
-            inFlight.signal(); return
+            inFlight.signal()
+            renderPending = true
+            if renderRetry == nil {
+                renderRetry = Task { [weak self] in
+                    do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+                    guard let self else { return }
+                    self.renderRetry = nil
+                    if self.renderPending { self.render() }
+                }
+            }
+            return
         }
+        renderPending = false
         var image = CIImage(cvPixelBuffer: current)
         if enhanced && enhancement.contrast > 0 {
             image = image.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1 + 0.4 * enhancement.contrast])
@@ -328,20 +355,26 @@ final class FrameView: NSView {
         renderer.context.render(image, to: drawable.texture, commandBuffer: command,
                                 bounds: CGRect(origin: .zero, size: target), colorSpace: renderer.colorSpace)
         let semaphore = inFlight
-        if onFirstFrameRendered != nil {
-            let generation = frameGeneration
-            command.addCompletedHandler { [weak self] command in
-                semaphore.signal()
-                guard command.status == .completed else { return }
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.frameGeneration == generation else { return }
+        let generation = frameGeneration
+        let notifyFirstFrame = onFirstFrameRendered != nil
+        command.addCompletedHandler { [weak self] command in
+            semaphore.signal()
+            let completed = command.status == .completed
+            let failure = command.error?.localizedDescription ?? "Metal command ended with status \(command.status.rawValue)."
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if !completed {
+                    if self.frameGeneration == generation { self.renderFailure = failure }
+                    Self.log.error("Frame rendering failed: \(failure, privacy: .public)")
+                    return
+                }
+                if notifyFirstFrame, self.frameGeneration == generation {
                     let callback = self.onFirstFrameRendered
                     self.onFirstFrameRendered = nil
                     callback?()
                 }
+                if self.renderPending { self.render() }
             }
-        } else {
-            command.addCompletedHandler { _ in semaphore.signal() }
         }
         command.present(drawable)
         command.commit()

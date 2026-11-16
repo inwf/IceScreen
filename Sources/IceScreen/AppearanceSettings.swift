@@ -186,6 +186,7 @@ final class AppearancePreviewView: NSView {
         self.preferences = preferences
         if appearanceChanged { needsDisplay = true }
         if sample == nil || imageID != image?.id || (image == nil && appearanceChanged) {
+            surface.frameView.releaseFrame()
             imageID = image?.id
             sample = image?.pixels ?? (dark ? AppearanceSample.dark : AppearanceSample.light)
             surface.frameView.layer?.isOpaque = image == nil

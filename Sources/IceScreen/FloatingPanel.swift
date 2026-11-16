@@ -463,9 +463,17 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     func refreshSourceState() { checkSourceGeometry() }
 
     private func checkSourceGeometry() {
-        guard let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return }
-        guard let entry = entries.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == source.windowID }) else {
-            close(); return
+        guard !closed else { return }
+        let entry: [String: Any]
+        do {
+            guard let validated = try focusTarget.validate() else { return }
+            entry = validated
+        } catch is SourceFocusPending {
+            return
+        } catch {
+            Self.interactionLog.error("Source window validation failed: \(error.localizedDescription, privacy: .public)")
+            close()
+            return
         }
         guard let bounds = entry[kCGWindowBounds as String] as? [String: Any],
               let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), frame.width > 0, frame.height > 0 else { return }

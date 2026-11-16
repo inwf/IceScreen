@@ -16,7 +16,7 @@ for source in Sources/IceScreen/*.swift; do
 done
 swiftc -parse-as-library -I .build/focus-checks -L .build/focus-checks -lIceCore \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-    "${app_sources[@]}" scripts/check-source-focus.swift -o .build/focus-checks/source-focus
+    "${app_sources[@]}" scripts/native-focus-diagnostics.swift scripts/check-source-focus.swift -o .build/focus-checks/source-focus
 codesign --force --sign - .build/focus-checks/libIceCore.dylib
 for fixture in Checks Source Other; do
     bundle="$PWD/.build/focus-checks/$fixture.app"
@@ -47,16 +47,25 @@ elif [[ $# != 0 ]]; then
     echo "Usage: check-source-focus.sh [--ci]" >&2
     exit 1
 fi
-completion="$PWD/.build/focus-checks/source-focus.result"
-stdout="$PWD/.build/focus-checks/source-focus.stdout"
-stderr="$PWD/.build/focus-checks/source-focus.stderr"
-rm -f "$completion" "$stdout" "$stderr"
-open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/focus-checks/Checks.app" \
-    --args "$PWD/.build/focus-checks" "$completion" "$PWD"
-cat "$stdout" "$stderr"
-if [[ ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
-    log show --last 2m --style compact --predicate 'subsystem == "org.icescreen.app" AND (category == "SourceFocus" OR category == "PanelInteraction")'
+result=0
+for scenario in terminal interactions; do
+    completion="$PWD/.build/focus-checks/$scenario.result"
+    stdout="$PWD/.build/focus-checks/$scenario.stdout"
+    stderr="$PWD/.build/focus-checks/$scenario.stderr"
+    rm -f "$completion" "$completion.jsonl" "$stdout" "$stderr"
+    launch_status=0
+    open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/focus-checks/Checks.app" \
+        --args "$PWD/.build/focus-checks" "$completion" "$PWD" "$scenario" || launch_status=$?
+    for output in "$stdout" "$stderr"; do if [[ -f "$output" ]]; then cat "$output"; fi; done
+    if [[ "$launch_status" != 0 || ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
+        echo "Source focus scenario failed: $scenario (launch status $launch_status)." >&2
+        result=1
+    else
+        echo "Source focus scenario passed: $scenario."
+    fi
+done
+if [[ "$result" != 0 ]]; then
+    log show --last 5m --style compact --predicate 'subsystem == "org.icescreen.app" AND (category == "SourceFocus" OR category == "PanelInteraction" OR category == "FrameRenderer")'
     lsappinfo front
-    echo "Source focus checks did not complete successfully." >&2
-    exit 1
 fi
+exit "$result"

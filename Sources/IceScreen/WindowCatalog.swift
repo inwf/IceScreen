@@ -118,6 +118,7 @@ final class WindowCatalog: ObservableObject {
         app.activate(options: [.activateAllWindows])
 
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
         while true {
             try Task.checkCancellation()
             guard generation == focusGeneration else { throw CancellationError() }
@@ -148,6 +149,12 @@ final class WindowCatalog: ObservableObject {
                 let foreground = NSWorkspace.shared.frontmostApplication
                 Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")
                 throw RequestError.message("尚未返回来源窗口所在桌面，请检查来源应用是否有阻塞操作的对话框。")
+            }
+            if ContinuousClock.now >= nextActivation {
+                try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                if let target = reference.retainedElement { try raise(target) }
+                app.activate(options: [.activateAllWindows])
+                nextActivation = ContinuousClock.now.advanced(by: .milliseconds(500))
             }
             try await Task.sleep(for: .milliseconds(25))
         }

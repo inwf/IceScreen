@@ -137,7 +137,8 @@ enum SourceFocusChecks {
 
         let target = focusedWindow(sourceApp)
         precondition(AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success)
-        precondition(sourceApp.hide())
+        precondition(AXUIElementSetAttributeValue(session.focusTarget.root, kAXHiddenAttribute as CFString, kCFBooleanTrue) == .success,
+                     "The real source application must accept the Accessibility hide request.")
         try await wait { sourceApp.isHidden }
         click(session)
         try await wait { confirmations == before + 1 }

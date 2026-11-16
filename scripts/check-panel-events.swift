@@ -22,6 +22,8 @@ enum PanelEventChecks {
         lower.orderFrontRegardless()
         upper.orderFrontRegardless()
         settle()
+        let hitWindowNumber = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
+        print("Panel hit diagnostic: point=\(point), hit=\(hitWindowNumber), panels=\(panels.map { (number: $0.windowNumber, visible: $0.isVisible, activeSpace: $0.isOnActiveSpace, ignoresMouse: $0.ignoresMouseEvents, frame: $0.frame) }), ordered=\(NSApp.orderedWindows.map(\.windowNumber))")
         precondition(PanelHitTesting.frontmost(at: point, among: panels) === upper, "Visible NSPanel must receive hover actions.")
         lower.orderFrontRegardless()
         settle()

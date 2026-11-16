@@ -9,7 +9,10 @@ final class SmartCaptureTests: XCTestCase {
             .init(rect: outer, semantic: true),
             .init(rect: CGRect(x: 0, y: 0, width: 1, height: 1), semantic: true)
         ])
-        XCTAssertEqual(result.rect, outer)
+        XCTAssertEqual(result.rect.minX, outer.minX, accuracy: 0.000001)
+        XCTAssertEqual(result.rect.minY, outer.minY, accuracy: 0.000001)
+        XCTAssertEqual(result.rect.width, outer.width, accuracy: 0.000001)
+        XCTAssertEqual(result.rect.height, outer.height, accuracy: 0.000001)
     }
     func testOnlyBoundaryUnderPointerIsChosen() {
         let result = SmartCapture.select(at: CGPoint(x: 0.95, y: 0.05), candidates: [

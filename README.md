@@ -35,11 +35,11 @@ bash scripts/package-dmg.sh
 ## GitHub Actions 发布流程
 
 - 普通分支的 push 不触发工作流。
-- `main` 分支 push 执行测试、macOS 通用应用构建、DMG 和 ZIP 校验，并保留七天 Actions 构建产物。
+- `main` 分支 push 执行测试、macOS 通用应用构建、DMG 和 ZIP 校验，并保留十四天 Actions 构建产物。
 - Pull Request 只执行同样的检查，不发布版本。
-- 推送 `vX.Y.Z` 标签后，工作流先完成完整构建，再创建对应的 GitHub Release，上传通用 DMG、ZIP 和 `SHA256SUMS`。
+- 推送 `vX.Y.Z` 标签后，工作流查找同一提交上成功且未过期的主分支构建产物；找到后直接复用，找不到则重新测试和构建。检查通过后创建对应的 GitHub Release，上传通用 DMG、ZIP 和 `SHA256SUMS`。
 - Release 正文来自 `CHANGELOG.md` 中与标签版本对应的章节；版本标签必须和 `Info.plist` 中的版本一致。
-- Actions 页面手动运行时填写已有 `vX.Y.Z` 标签，可以重新构建并更新该 Release；留空只执行检查。
+- Actions 页面手动运行时填写已有 `vX.Y.Z` 标签，按相同规则复用或重新构建产物并更新该 Release；留空只执行检查。
 
 发布一个新版本时，先更新 `Sources/IceScreen/Resources/Info.plist` 和 `CHANGELOG.md`，提交到 `main` 并确认主分支检查通过，再创建并推送对应标签：
 

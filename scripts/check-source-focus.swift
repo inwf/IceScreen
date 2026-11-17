@@ -165,6 +165,8 @@ enum SourceFocusChecks {
         session.toggleHidden()
         session.resetZoom()
 
+        try checkScrollZoom(session, foreground: otherApp)
+
         try click(session, point: NSPoint(x: 24, y: session.surface.bounds.height - 24))
         print("Checking captured fixture return: PID=\(sourceApp.processIdentifier), window=\(source.windowID).")
         try await wait("click_delivery") { requests == 1 }
@@ -557,6 +559,49 @@ enum SourceFocusChecks {
     @MainActor private static func isOnScreen(_ id: CGWindowID) -> Bool {
         let entries = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         return entries.first { ($0[kCGWindowNumber as String] as? CGWindowID) == id }?[kCGWindowIsOnscreen as String] as? Bool == true
+    }
+
+    @MainActor private static func checkScrollZoom(_ session: CaptureSession, foreground: NSRunningApplication) throws {
+        NativeFocusDiagnostics.step("background_scroll_zoom")
+        let surface = session.surface
+        surface.layoutSubtreeIfNeeded()
+        let point = surface.convert(NSPoint(x: surface.bounds.midX, y: surface.bounds.midY), to: nil)
+        guard let input = surface.target(atWindowPoint: point) as? PanelInput else {
+            throw RequestError.message("Scroll checks must target the actual panel content control.")
+        }
+        let baseline = Viewport.initial(anchor: .center, factor: 4)
+        let panelFrame = session.panel.frame
+        defer { session.resetZoom() }
+        for units: CGScrollEventUnit in [.pixel, .line] {
+            for (delta, command) in [(Int32(3), true), (Int32(-3), true), (Int32(3), false)] {
+                session.setViewport(baseline)
+                guard let cgEvent = CGEvent(scrollWheelEvent2Source: nil, units: units, wheelCount: 1,
+                                           wheel1: delta, wheel2: 0, wheel3: 0) else {
+                    throw RequestError.message("Cannot create a native scroll event.")
+                }
+                cgEvent.flags = command ? .maskCommand : []
+                guard let event = NSEvent(cgEvent: cgEvent) else {
+                    throw RequestError.message("Cannot bridge the native scroll event to AppKit.")
+                }
+                try require(event.type == .scrollWheel && event.scrollingDeltaY != 0
+                            && (event.scrollingDeltaY > 0) == (delta > 0)
+                            && event.modifierFlags.contains(.command) == command,
+                            "The native event must retain its scroll direction and modifier.")
+                input.scrollWheel(with: event)
+                if command {
+                    try require(delta > 0 ? session.viewport.magnification > baseline.magnification
+                                          : session.viewport.magnification < baseline.magnification,
+                                "Command-scroll must zoom in for positive deltas and out for negative deltas.")
+                } else {
+                    try require(session.viewport.magnification == baseline.magnification && session.viewport != baseline,
+                                "Scrolling without Command must pan the captured content.")
+                }
+                try require(session.panel.frame == panelFrame && !session.panel.isKeyWindow && !NSApp.isActive
+                            && NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier,
+                            "Scroll interactions must preserve panel geometry and foreground application focus.")
+            }
+        }
+        print("Passed native pixel and line Command-scroll zoom direction, plain-scroll panning, and background focus checks.")
     }
 
     @MainActor private static func click(_ session: CaptureSession, count: Int = 1, point: NSPoint? = nil) throws {

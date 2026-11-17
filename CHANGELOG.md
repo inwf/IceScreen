@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### English
+
+- Fixed reversed content zoom direction when holding Command and scrolling over a floating panel.
+- Added native checks for pixel and line scroll events, covering zoom direction, ordinary panning, panel geometry, and foreground focus.
+
+### 中文
+
+- 修复按住 Command 并在浮窗上滚动时，内容缩放方向相反的问题。
+- 增加像素滚动和行滚动事件的原生检查，覆盖缩放方向、普通平移、浮窗尺寸与位置以及前台焦点。
+
 ## 1.2.7 — 2026-11-17
 
 ### Fixed

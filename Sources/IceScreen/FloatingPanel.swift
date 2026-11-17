@@ -894,7 +894,7 @@ final class PanelInput: NSControl {
         guard let owner else { return }
         if event.modifierFlags.contains(.command) {
             let point = convert(event.locationInWindow, from: nil)
-            owner.setViewport(owner.viewport.zoomed(by: exp(-Double(event.scrollingDeltaY) * 0.015),
+            owner.setViewport(owner.viewport.zoomed(by: exp(Double(event.scrollingDeltaY) * 0.015),
                 around: CGPoint(x: point.x / bounds.width, y: point.y / bounds.height)))
         } else {
             let multiplier = event.hasPreciseScrollingDeltas ? 1.0 : 12.0

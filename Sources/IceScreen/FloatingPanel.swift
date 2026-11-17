@@ -27,7 +27,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             pointerMoved(to: NSEvent.mouseLocation)
             updateStatus()
             if oldValue != autoHide {
-                hint.show(autoHide ? L10n.text("自动隐藏已开启", "Auto-hide enabled") : L10n.text("自动隐藏已关闭", "Auto-hide disabled"), near: panel.frame)
+                hint.show(autoHide ? L10n.text("自动隐藏已开启", "Auto-hide enabled") : L10n.text("自动隐藏已关闭", "Auto-hide disabled"), over: panel, duration: 1.6)
             }
         }
     }
@@ -303,7 +303,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
               let position = snapshot.seekPosition(relative: seconds, at: Date().timeIntervalSince1970) else { return false }
         mediaAction("seek", position: position); return true
     }
-    func showHint(_ text: String) { hint.show(text, near: panel.frame) }
+    func showHint(_ text: String) { hint.show(text, over: panel) }
 
     func sourceFocusChanged(windowID: CGWindowID?, behavior: SourceFocusBehavior) {
         let focused = windowID == source.windowID

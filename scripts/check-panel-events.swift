@@ -167,12 +167,80 @@ enum PanelEventChecks {
         let outside = NSPoint(x: frame.minX - 30, y: frame.midY)
         precondition(PanelHitTesting.frontmost(at: outside, among: panels) == nil,
                      "Input outside background panels must not target them.")
+        checkHintPlacement(in: lower, assertBackground: assertBackground)
         lower.orderOut(nil)
         settle()
         precondition(PanelHitTesting.frontmost(at: point, among: panels) == nil,
                      "Closing all background panels must release the WindowServer target.")
         assertBackground()
         print("Passed background WindowServer ordering, mouse-through, hiding, AppKit first-click dispatch, and foreground PID preservation checks.")
+    }
+
+    @MainActor private static func accessibilityElement(_ object: Any, identifier: String, depth: Int = 0) -> (any NSAccessibilityProtocol)? {
+        guard depth < 20, let element = object as? any NSAccessibilityProtocol else { return nil }
+        if element.accessibilityIdentifier() == identifier { return element }
+        for child in element.accessibilityChildren() ?? [] {
+            if let result = accessibilityElement(child, identifier: identifier, depth: depth + 1) { return result }
+        }
+        return nil
+    }
+
+    @MainActor private static func checkHintPlacement(in source: FloatingPanel, assertBackground: () -> Void) {
+        let presenter = PanelHintPresenter()
+        let original = source.frame
+        defer { presenter.close(); source.alphaValue = 1; source.setFrame(original, display: true) }
+        func checkCentered() {
+            guard let hint = presenter.panel, let host = hint.contentView else { fatalError("Missing hint window.") }
+            host.layoutSubtreeIfNeeded()
+            precondition(hint.frame == source.contentRect(forFrameRect: source.frame), "Hint host must follow the source content frame.")
+            precondition(host.frame.size == hint.frame.size && !host.isOpaque, "The transparent hosting view must fill its window.")
+            precondition(hint.ignoresMouseEvents && !hint.canBecomeKey && !hint.isKeyWindow && !hint.isMainWindow,
+                         "Hints must remain mouse-through and nonactivating.")
+            precondition(PanelHitTesting.frontmost(at: NSPoint(x: source.frame.midX, y: source.frame.midY), among: [source]) === source,
+                         "The hint must leave WindowServer hit testing on its source.")
+            wait("The actual hint accessibility element must be available.") {
+                accessibilityElement(host, identifier: "panel.hint") != nil
+            }
+            let rendered = accessibilityElement(host, identifier: "panel.hint")!.accessibilityFrame()
+            precondition(abs(rendered.midX - source.frame.midX) < 2 && abs(rendered.midY - source.frame.midY) < 2,
+                         "The rendered hint must be centered over its source: \(rendered), source: \(source.frame).")
+            precondition(source.frame.insetBy(dx: -1, dy: -1).contains(rendered), "The rendered hint must fit inside the source.")
+            assertBackground()
+        }
+        for message in ["自动隐藏已开启", "自动隐藏已关闭", "Auto-hide enabled", "Auto-hide disabled",
+                        "无法调整来源进度，请检查系统设置中的自动化权限。", "Unable to seek in the source. Check Automation permission in System Settings."] {
+            presenter.show(message, over: source)
+            settle()
+            checkCentered()
+        }
+        let existing = presenter.panel!
+        for size in [NSSize(width: 180, height: 140), NSSize(width: 80, height: 40), NSSize(width: 440, height: 280)] {
+            source.setFrame(NSRect(x: original.minX + 24, y: original.minY + 16, width: size.width, height: size.height), display: true)
+            settle()
+            precondition(presenter.panel === existing, "Moving and resizing must update the existing hint.")
+            checkCentered()
+        }
+        for screen in NSScreen.screens {
+            let visible = screen.visibleFrame
+            for origin in [visible.origin, CGPoint(x: visible.maxX - source.frame.width, y: visible.maxY - source.frame.height)] {
+                source.setFrameOrigin(origin)
+                settle()
+                checkCentered()
+            }
+        }
+        source.alphaValue = 0
+        precondition(existing.isVisible && existing.alphaValue > 0, "Auto-hiding the source must keep its hint readable.")
+        presenter.show("替换提示", over: source)
+        precondition(!existing.isVisible && presenter.panel !== existing, "A replacement must dismiss the previous hint.")
+        presenter.close()
+        precondition(presenter.panel == nil)
+        let closing = makePanel(original)
+        closing.orderFrontRegardless()
+        presenter.show("Auto-hide enabled", over: closing)
+        let orphan = presenter.panel!
+        closing.close()
+        precondition(presenter.panel == nil && !orphan.isVisible, "Closing the source must dismiss its hint immediately.")
+        print("Passed native bilingual hint centering, movement, resizing, replacement, and input isolation checks.")
     }
 
     @MainActor private static func checkLanguageSettings() {
@@ -475,6 +543,37 @@ enum PanelEventChecks {
         checkButton(65, 19, .frameRate)
         precondition(hit(24, 216) is PanelInput, "The lower-left content must receive clicks.")
         checkButton(345, 225, .resize)
+        for message in ["捕获已暂停", "Capture paused", "来源窗口位于台前调度的其他分组\n返回来源窗口后继续捕获",
+                        "Source is in another Stage Manager group\nReturn to the source to resume capture"] {
+            chrome.state.value.message = message
+            chrome.state.value.stageInactive = false
+            settle()
+            wait("The actual status accessibility element must be available.") {
+                accessibilityElement(chrome, identifier: "panel.status") != nil
+            }
+            let rendered = accessibilityElement(chrome, identifier: "panel.status")!.accessibilityFrame()
+            precondition(abs(rendered.midX - panel.frame.midX) < 2 && abs(rendered.midY - panel.frame.midY) < 2,
+                         "Status text must render at the panel center.")
+            for size in [CGSize(width: 180, height: 140), CGSize(width: 360, height: 240)] {
+                chrome.state.value.stageInactive = true
+                let layout = chrome.state.messageLayout(in: size)
+                let action = chrome.state.regions(in: size).first { $0.id == .returnSource }!.frame
+                precondition(!layout.message.intersects(action) && layout.message.maxY + 8 <= action.minY,
+                             "Multiline status messages must remain clear of the return button.")
+                precondition(layout.message.union(action).midY == size.height / 2)
+            }
+            settle()
+            wait("The actual return button accessibility element must be available.") {
+                accessibilityElement(chrome, identifier: "panel.returnSource") != nil
+            }
+            let statusFrame = accessibilityElement(chrome, identifier: "panel.status")!.accessibilityFrame()
+            let actionFrame = accessibilityElement(chrome, identifier: "panel.returnSource")!.accessibilityFrame()
+            precondition(!statusFrame.intersects(actionFrame), "Rendered status text and return control must not overlap.")
+            let button = chrome.state.regions(in: surface.bounds.size).first { $0.id == .returnSource }!.frame
+            checkButton(button.midX, button.midY, .returnSource)
+        }
+        chrome.state.value.message = nil
+        chrome.state.value.stageInactive = false
         surface.update(title: "Source", status: "10 FPS", idle: false, detection: true, message: nil)
         checkButton(120, 19, .threshold)
         surface.update(title: "Source", status: "10 FPS", idle: false, detection: false, message: nil)

@@ -63,10 +63,20 @@ final class RegionSurface: NSView {
             border.stroke()
         }
         let message = L10n.text("拖动选择捕获区域 · Esc 取消", "Drag to select a capture region · Esc to cancel")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: NSColor.white
+            .font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: NSColor.white,
+            .paragraphStyle: paragraph
         ]
-        message.draw(at: CGPoint(x: 20, y: 20), withAttributes: attributes)
+        let available = CGRect(x: 12, y: 12, width: max(0, bounds.width - 24), height: max(0, bounds.height - 24))
+        guard !available.isEmpty else { return }
+        let textBounds = (message as NSString).boundingRect(with: CGSize(width: available.width, height: available.height),
+            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
+        (message as NSString).draw(with: CGRect(x: available.minX, y: available.minY, width: available.width,
+                                              height: min(available.height, ceil(textBounds.height))),
+                                   options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine], attributes: attributes)
     }
 
     override func mouseDown(with event: NSEvent) {

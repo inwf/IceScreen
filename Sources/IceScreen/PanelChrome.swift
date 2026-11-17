@@ -60,6 +60,16 @@ final class PanelChromeState: ObservableObject {
                   "Content detection: \(detectionTitle). Click to select idle, change, or subtle detection.", language: value.language)
     }
 
+    func messageLayout(in size: CGSize) -> PanelMessageLayout {
+        let inset: CGFloat = (value.hovered || value.detection) && size.width >= 80 && size.height >= 46 ? 40 : 8
+        let bounds = CGRect(x: 8, y: min(inset, size.height / 2),
+                            width: max(0, size.width - 16), height: max(0, size.height - inset * 2))
+        let messageSize = PanelMessage.size(for: value.message ?? "", width: min(380, bounds.width), style: .status)
+        let action = value.stageInactive && size.width >= 180 && size.height >= 140 && bounds.height >= 60
+            ? CGSize(width: 124, height: 30) : nil
+        return PanelMessageLayout(in: bounds, messageSize: messageSize, actionSize: action)
+    }
+
     func regions(in size: CGSize) -> [PanelControlRegion] {
         guard size.width >= 80, size.height >= 46 else { return [] }
         var items: [PanelControlRegion] = []
@@ -90,8 +100,8 @@ final class PanelChromeState: ObservableObject {
         if value.hovered || value.detection {
             items.append(.init(id: .detection, frame: CGRect(x: size.width - 38, y: 8, width: 30, height: 30)))
         }
-        if value.stageInactive && size.width >= 180 && size.height >= 140 {
-            items.append(.init(id: .returnSource, frame: CGRect(x: size.width / 2 - 54, y: size.height / 2 + 32, width: 108, height: 30)))
+        if value.stageInactive, let frame = messageLayout(in: size).action {
+            items.append(.init(id: .returnSource, frame: frame))
         }
         return items
     }
@@ -151,14 +161,12 @@ struct PanelChrome: View {
             .position(x: 12 + (size.width - 66) / 2, y: size.height - 30)
         }
         if let message = state.value.message {
-            Text(message)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(10)
-                .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: max(0, size.width - 32))
-                .position(x: size.width / 2, y: size.height / 2)
+            let frame = state.messageLayout(in: size).message
+            if frame.height >= 20 {
+                PanelMessage(message: message, style: .status)
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
+            }
         }
     }
 

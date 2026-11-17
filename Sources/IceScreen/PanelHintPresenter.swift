@@ -1,22 +1,21 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import IceCore
 
 /// 提示使用独立的穿透面板，浮窗自动隐藏后仍可读到切换结果。
 @MainActor
 final class PanelHintPresenter {
-    private var panel: NSPanel?
+    private(set) var panel: NSPanel?
+    private weak var source: NSWindow?
+    private var observers: [NSObjectProtocol] = []
     private var dismissal: Task<Void, Never>?
 
-    func show(_ message: String, near anchor: CGRect) {
+    func show(_ message: String, over source: NSWindow, duration: TimeInterval = 4) {
         close()
-        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: anchor.midX, y: anchor.midY)) }
-        guard let visible = screen?.visibleFrame else { return }
-        let size = CGSize(width: min(message.count > 14 ? 380 : 220, visible.width - 16),
-                          height: message.count > 14 ? 88 : 44)
-        let origin = CGPoint(x: min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8),
-                             y: min(max(anchor.midY - size.height / 2, visible.minY + 8), visible.maxY - size.height - 8))
-        let window = FloatingPanel(contentRect: CGRect(origin: origin, size: size),
+        self.source = source
+        let frame = source.contentRect(forFrameRect: source.frame)
+        let window = FloatingPanel(contentRect: frame,
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -26,8 +25,21 @@ final class PanelHintPresenter {
         window.ignoresMouseEvents = true
         window.level = .popUpMenu
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        window.contentView = NSHostingView(rootView: PanelHint(message: message))
+        let host = PanelHintHost(rootView: PanelHint(message: message))
+        host.sizingOptions = []
+        host.safeAreaRegions = []
+        host.frame = CGRect(origin: .zero, size: frame.size)
+        host.autoresizingMask = [.width, .height]
+        window.contentView = host
         panel = window
+        for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.didChangeScreenNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: source, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateFrame() }
+            })
+        }
+        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: source, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.close() }
+        })
         window.alphaValue = 0
         window.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
@@ -35,10 +47,10 @@ final class PanelHintPresenter {
             window.animator().alphaValue = 1
         }
         dismissal = Task { [weak self, weak window] in
-            do { try await Task.sleep(for: .seconds(message.count > 14 ? 4 : 1.6)) } catch { return }
+            do { try await Task.sleep(for: .seconds(duration)) } catch { return }
             guard let self, let window, self.panel === window else { return }
             await NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
+                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.15
                 window.animator().alphaValue = 0
             }
             do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
@@ -46,30 +58,39 @@ final class PanelHintPresenter {
         }
     }
 
+    private func updateFrame() {
+        guard let source else { close(); return }
+        panel?.setFrame(source.contentRect(forFrameRect: source.frame), display: true)
+    }
+
     func close() {
         dismissal?.cancel()
         dismissal = nil
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        source = nil
         panel?.close()
         panel = nil
     }
 }
 
+private final class PanelHintHost: NSHostingView<PanelHint> {
+    override var isOpaque: Bool { false }
+}
+
 private struct PanelHint: View {
     let message: String
     var body: some View {
-        Group {
-            if #available(macOS 26.0, *) {
-                label.glassEffect(.regular, in: .capsule)
-            } else {
-                label.background(.regularMaterial, in: Capsule())
-            }
-        }.padding(4)
-    }
-    private var label: some View {
-        Text(message).font(.system(size: 13, weight: .medium))
-            .multilineTextAlignment(.center).lineLimit(3)
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .accessibilityAddTraits(.updatesFrequently)
+        GeometryReader { geometry in
+            let bounds = CGRect(x: 8, y: 8, width: max(0, geometry.size.width - 16), height: max(0, geometry.size.height - 16))
+            let size = PanelMessage.size(for: message, width: min(380, bounds.width), style: .hint)
+            let layout = PanelMessageLayout(in: bounds, messageSize: size)
+            PanelMessage(message: message, style: .hint)
+                .frame(width: layout.message.width, height: layout.message.height)
+                .position(x: layout.message.midX, y: layout.message.midY)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .clipped()
     }
 }
 #endif

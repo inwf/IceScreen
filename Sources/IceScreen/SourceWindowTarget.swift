@@ -13,6 +13,7 @@ final class SourceWindowTarget {
     let application: NSRunningApplication?
     let root: AXUIElement
     private let launchedAt: Date?
+    private var hasInvalidatedElement = false
     private(set) var retainedElement: AXUIElement?
     private(set) var resolutionState = "not_resolved"
 
@@ -58,6 +59,7 @@ final class SourceWindowTarget {
             var role: CFTypeRef?
             let status = AXUIElementCopyAttributeValue(retainedElement, kAXRoleAttribute as CFString, &role)
             resolutionState = "retained_role=\(status.rawValue)"
+            if status == .invalidUIElement { hasInvalidatedElement = true }
             if AXUIElementGetPid(retainedElement, &pid) == .success, pid == processID {
                 // 该对象已按原 PID 和窗口 ID 验证；存活检查保留捕获时的 ID 关联。
                 if status == .success, role as? String == kAXWindowRole { return retainedElement }
@@ -119,10 +121,15 @@ final class SourceWindowTarget {
             }
             guard roleStatus == .success, role as? String == kAXWindowRole else { continue }
             retainedElement = element
+            hasInvalidatedElement = false
             resolutionState = "resolved_exact_window=\(windowID)"
             return element
         }
         if let pending { throw pending }
+        // 已失效的原 AX 对象没有同 ID 替代对象，且窗口已脱离所有桌面。
+        if hasInvalidatedElement, try WindowActivation.spaceIDs(for: windowID).isEmpty {
+            throw RequestError.message("来源窗口已经关闭。")
+        }
         // 非当前 Space 的窗口可以暂时不出现在 AXWindows 中。
         return nil
     }

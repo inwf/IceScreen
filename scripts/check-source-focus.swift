@@ -277,8 +277,19 @@ enum SourceFocusChecks {
             if status == .cannotComplete { throw SourceFocusPending(operation: "Waiting for fixture close: AX status \(status.rawValue)") }
             try require(status == .success || status == .invalidUIElement, "Reading closed fixture failed: AX status \(status.rawValue).")
             let closed = status == .invalidUIElement
-            let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
-            return closed && !entries.contains { ($0[kCGWindowNumber as String] as? CGWindowID) == source.windowID }
+            guard let windows = try read(session.focusTarget.root, kAXWindowsAttribute) as? [AXUIElement],
+                  let entries = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
+                throw RequestError.message("Cannot read actual window lists while confirming fixture closure.")
+            }
+            let identifiers = try windows.compactMap { try WindowActivation.windowID(of: $0) }
+            let visible = entries.contains {
+                ($0[kCGWindowNumber as String] as? CGWindowID) == source.windowID
+                    && $0[kCGWindowIsOnscreen as String] as? Bool == true
+            }
+            let spaces = try WindowActivation.spaceIDs(for: source.windowID)
+            // close() 移除窗口；WindowServer 可以继续保留无桌面归属的离屏记录。
+            return closed && !identifiers.contains(source.windowID) && identifiers.contains(sibling.windowID)
+                && !visible && spaces.isEmpty
         }
         var rejected = false
         NativeFocusDiagnostics.step("verify_closed_source_rejection")

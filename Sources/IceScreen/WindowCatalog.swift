@@ -133,15 +133,18 @@ final class WindowCatalog: ObservableObject {
                 let entry = try reference.validate()
                 observation.onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
                 observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
-                if app.isHidden {
-                    if attempt {
+                if attempt {
+                    if observation.hidden {
                         try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: "显示来源应用")
                     }
-                    throw SourceFocusPending(operation: "等待显示来源应用")
+                    // WindowServer 可以先改变前台 PID；桌面切换仍需应用激活，且不依赖 AXWindows。
+                    if progress.requiresApplicationActivation(for: observation) {
+                        let accepted = app.activate(options: [.activateAllWindows])
+                        Self.focusLog.debug("Application activation: accepted=\(accepted), PID=\(owner.processID), window=\(source.windowID), visibleSpace=\(observation.onVisibleSpace), hidden=\(observation.hidden)")
+                    }
                 }
-                if attempt, !observation.onScreen || !observation.onVisibleSpace {
-                    // 先请求返回来源 Space，使暂时不可响应的 AX 对象重新可用。
-                    try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                if app.isHidden {
+                    throw SourceFocusPending(operation: "等待显示来源应用")
                 }
                 guard let target = try reference.resolveElement() else {
                     throw SourceFocusPending(operation: "等待来源窗口对象重新可用")
@@ -155,8 +158,6 @@ final class WindowCatalog: ObservableObject {
                 }
                 if attempt {
                     Self.focusLog.debug("Selecting exact source: PID=\(owner.processID), window=\(source.windowID), resolution=\(reference.resolutionState, privacy: .public)")
-                    // 应用激活在精确窗口选择之前完成，避免覆盖后续交付的目标焦点。
-                    if !app.isActive { app.activate(options: []) }
                     try set(target, kAXMainAttribute, kCFBooleanTrue, operation: "选择来源窗口")
                     try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
                     try raise(target)
@@ -179,6 +180,10 @@ final class WindowCatalog: ObservableObject {
                 }
                 observation.foregroundPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
                 observation.hidden = app.isHidden
+                observation.minimized = try minimized(target)
+                let confirmedEntry = try reference.validate()
+                observation.onScreen = confirmedEntry?[kCGWindowIsOnscreen as String] as? Bool == true
+                observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
                 if progress.observe(observation, at: ProcessInfo.processInfo.systemUptime) { return }
             } catch let pending as SourceFocusPending {
                 progress.pending()

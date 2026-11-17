@@ -73,16 +73,32 @@ final class SourceWindowTarget {
         var result: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &result)
         resolutionState += ", list=\(status.rawValue)"
-        if status == .cannotComplete { throw pending ?? SourceFocusPending(operation: "读取来源应用窗口列表") }
-        if status == .noValue {
-            if let pending { throw pending }
-            return nil
-        }
-        guard status == .success else {
+        var elements: [AXUIElement] = []
+        if status == .cannotComplete {
+            pending = pending ?? SourceFocusPending(operation: "读取来源应用窗口列表")
+        } else if status == .success {
+            guard let listed = result as? [AXUIElement] else {
+                throw RequestError.message("来源应用返回了无效的窗口列表。")
+            }
+            elements = listed
+        } else if status != .noValue {
             throw RequestError.message("读取来源窗口对象失败（辅助功能错误 \(status.rawValue)）。")
         }
-        guard let elements = result as? [AXUIElement] else {
-            throw RequestError.message("来源应用返回了无效的窗口列表。")
+
+        // Terminal 的非当前 Space 窗口可从 AXFocusedWindow 取得，仍须核对原 PID、窗口 ID 和 role。
+        var focused: CFTypeRef?
+        let focusedStatus = AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &focused)
+        resolutionState += ", focused=\(focusedStatus.rawValue)"
+        if focusedStatus == .success {
+            guard let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else {
+                throw RequestError.message("来源应用返回了无效的焦点窗口对象。")
+            }
+            let element = unsafeBitCast(focused, to: AXUIElement.self)
+            if !elements.contains(where: { CFEqual($0, element) }) { elements.append(element) }
+        } else if focusedStatus == .cannotComplete {
+            pending = pending ?? SourceFocusPending(operation: "读取来源应用焦点窗口对象")
+        } else if focusedStatus != .noValue, focusedStatus != .attributeUnsupported {
+            throw RequestError.message("读取来源焦点窗口对象失败（辅助功能错误 \(focusedStatus.rawValue)）。")
         }
         resolutionState += ", candidates=\(elements.count)"
         for element in elements {

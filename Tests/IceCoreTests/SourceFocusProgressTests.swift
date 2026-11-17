@@ -19,8 +19,8 @@ final class SourceFocusProgressTests: XCTestCase {
         }
     }
 
-    private func recording() throws -> Recording {
-        let url = try XCTUnwrap(Bundle.module.url(forResource: "source-focus-observations", withExtension: "json", subdirectory: "Fixtures"))
+    private func recording(_ resource: String = "source-focus-observations") throws -> Recording {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: resource, withExtension: "json", subdirectory: "Fixtures"))
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(Recording.self, from: Data(contentsOf: url))
@@ -34,6 +34,7 @@ final class SourceFocusProgressTests: XCTestCase {
         for record in value.records {
             XCTAssertFalse(progress.observe(record.observation, at: record.time.timeIntervalSince(value.startedAt)))
             XCTAssertEqual(progress.failure(for: record.observation), .keyboardFocus)
+            XCTAssertFalse(progress.requiresApplicationActivation(for: record.observation))
         }
         XCTAssertTrue(progress.expired(at: 5))
     }
@@ -79,5 +80,27 @@ final class SourceFocusProgressTests: XCTestCase {
         var progress = SourceFocusProgress(processID: value.processID, windowID: value.windowID, startedAt: 0)
         XCTAssertFalse(progress.observe(record.observation, at: 4.95))
         XCTAssertFalse(progress.observe(record.observation, at: 5.051))
+    }
+
+    func testRecordedOffSpaceWindowRequiresActivationWithForegroundPIDAlreadyCorrect() throws {
+        let recording = try recording("source-focus-off-space-observations")
+        XCTAssertEqual(recording.runID, 43893838209)
+        let value = try XCTUnwrap(recording.cases.first)
+        var progress = SourceFocusProgress(processID: value.processID, windowID: value.windowID, startedAt: 0)
+        for record in value.records {
+            XCTAssertTrue(progress.requiresApplicationActivation(for: record.observation))
+            XCTAssertEqual(progress.failure(for: record.observation), .space)
+            XCTAssertFalse(progress.observe(record.observation, at: record.time.timeIntervalSince(value.startedAt)))
+        }
+        let final = try XCTUnwrap(value.records.last)
+        XCTAssertEqual(final.observation.foregroundPID, value.processID)
+        XCTAssertEqual(final.observation.focusedWindowID, value.windowID)
+    }
+
+    func testRecordedVisibleExactWindowDoesNotRepeatBroadActivation() throws {
+        let value = try XCTUnwrap(try recording().cases.first { $0.name == "retained_terminal_return" })
+        let record = try XCTUnwrap(value.records.first)
+        let progress = SourceFocusProgress(processID: value.processID, windowID: value.windowID, startedAt: 0)
+        XCTAssertFalse(progress.requiresApplicationActivation(for: record.observation))
     }
 }

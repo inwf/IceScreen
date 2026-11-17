@@ -1,0 +1,35 @@
+{
+  "runID": 43893838209,
+  "cases": [
+    {
+      "name": "uncached_terminal_return",
+      "processID": 3741,
+      "windowID": 56,
+      "startedAt": "2026-11-16T15:14:48Z",
+      "records": [
+        {
+          "time": "2026-11-16T15:14:48Z",
+          "observation": {
+            "foregroundPID": 3742,
+            "focusedWindowID": 56,
+            "onScreen": false,
+            "onVisibleSpace": false,
+            "hidden": false,
+            "minimized": false
+          }
+        },
+        {
+          "time": "2026-11-16T15:14:53Z",
+          "observation": {
+            "foregroundPID": 3741,
+            "focusedWindowID": 56,
+            "onScreen": false,
+            "onVisibleSpace": false,
+            "hidden": false,
+            "minimized": false
+          }
+        }
+      ]
+    }
+  ]
+}

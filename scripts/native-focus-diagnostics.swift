@@ -6,6 +6,7 @@ import IceCore
 enum NativeFocusDiagnostics {
     private static var output: FileHandle?
     private static var phase = "startup"
+    private(set) static var stage = "startup"
     private static var applications: [String: NSRunningApplication] = [:]
     private static weak var session: CaptureSession?
     static var captureFailure: String? { session?.failure ?? session?.surface.frameView.renderFailure }
@@ -27,13 +28,44 @@ enum NativeFocusDiagnostics {
 
     static func begin(_ name: String) {
         phase = name
+        stage = "preparation"
         snapshot("begin")
+    }
+
+    static func step(_ name: String) {
+        stage = name
+        event("stage_begin")
+    }
+
+    static func event(_ name: String, details: [String: Any] = [:]) {
+        var record = details
+        record["time"] = ISO8601DateFormatter().string(from: Date())
+        record["uptime"] = ProcessInfo.processInfo.systemUptime
+        record["phase"] = phase
+        record["stage"] = stage
+        record["event"] = name
+        write(record)
+    }
+
+    static func accessibility(_ operation: String, element: AXUIElement, attribute: String,
+                              status: AXError, value: CFTypeRef? = nil) {
+        var pid: pid_t = 0
+        let pidStatus = AXUIElementGetPid(element, &pid)
+        var record: [String: Any] = [
+            "time": ISO8601DateFormatter().string(from: Date()), "phase": phase,
+            "stage": stage, "event": "accessibility", "operation": operation, "attribute": attribute,
+            "status": status.rawValue, "pid": pid, "pidStatus": pidStatus.rawValue,
+            "elementHash": CFHash(element)
+        ]
+        if let value = value as? String { record["value"] = value }
+        else if let value = value as? NSNumber { record["value"] = value }
+        write(record)
     }
 
     static func snapshot(_ event: String, file: StaticString = #file, line: UInt = #line) {
         var record: [String: Any] = [
             "time": ISO8601DateFormatter().string(from: Date()), "phase": phase,
-            "event": event, "file": String(describing: file), "line": line,
+            "stage": stage, "event": event, "file": String(describing: file), "line": line,
             "frontmostPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0,
             "frontmostBundle": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown"
         ]
@@ -81,6 +113,10 @@ enum NativeFocusDiagnostics {
                 "renderer": session.surface.frameView.renderingState
             ]
         }
+        write(record)
+    }
+
+    private static func write(_ record: [String: Any]) {
         let data = try! JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) + Data([0x0a])
         try! output?.write(contentsOf: data)
         try! FileHandle.standardOutput.write(contentsOf: data)

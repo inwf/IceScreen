@@ -48,6 +48,10 @@ public struct SourceFocusProgress: Sendable {
 
     public mutating func pending() { confirmedSince = nil }
 
+    public func requiresApplicationActivation(for value: Observation) -> Bool {
+        value.hidden || value.foregroundPID != processID || !value.onVisibleSpace
+    }
+
     public mutating func observe(_ value: Observation, at time: TimeInterval) -> Bool {
         guard !expired(at: time), failure(for: value) == nil else {
             confirmedSince = nil

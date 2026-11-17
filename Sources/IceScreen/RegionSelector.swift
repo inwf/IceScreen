@@ -62,7 +62,7 @@ final class RegionSurface: NSView {
             border.lineWidth = 2
             border.stroke()
         }
-        let message = "拖动选择捕获区域 · Esc 取消"
+        let message = L10n.text("拖动选择捕获区域 · Esc 取消", "Drag to select a capture region · Esc to cancel")
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: NSColor.white
         ]

@@ -26,11 +26,11 @@ private final class MediaBridge {
 
     init() throws {
         guard let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW) else {
-            throw BridgeError.unavailable
+            throw MediaServiceError.unavailable
         }
         self.handle = handle
         func load<T>(_ name: String, _ type: T.Type) throws -> T {
-            guard let pointer = dlsym(handle, name) else { throw BridgeError.unavailable }
+            guard let pointer = dlsym(handle, name) else { throw MediaServiceError.unavailable }
             return unsafeBitCast(pointer, to: type)
         }
         clients = try load("MRMediaRemoteGetNowPlayingClients", Clients.self)
@@ -79,7 +79,7 @@ private final class MediaBridge {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
             guard let self, self.refreshNumber == number, self.refreshing else { return }
             self.refreshNumber += 1; self.refreshing = false; self.targets.removeAll()
-            Self.output(.init(error: "系统媒体服务没有响应。"))
+            Self.output(.init(errorCode: .timeout))
         }
         clients(.main) { [weak self] list in
             guard let self, number == self.refreshNumber else { return }
@@ -106,7 +106,7 @@ private final class MediaBridge {
     func receive(_ request: MediaRequest) {
         if request.action == "refresh" { refresh(); return }
         guard let id = request.id, let target = targets[id] else {
-            Self.output(.init(error: "来源媒体已结束，请等待播放状态更新。")); return
+            Self.output(.init(errorCode: .sourceEnded)); return
         }
         let codes: [String: Int32] = ["toggle": 2, "next": 4, "previous": 5, "seek": 24]
         guard let code = codes[request.action] else { return }
@@ -126,10 +126,6 @@ private final class MediaBridge {
             try FileHandle.standardOutput.write(contentsOf: data)
         } catch { exit(74) }
     }
-    enum BridgeError: LocalizedError {
-        case unavailable
-        var errorDescription: String? { "当前系统的媒体控制接口不可用。" }
-    }
 }
 
 // 通过系统解释器装载，兼容 macOS 15.4 及后续版本的媒体服务访问规则。
@@ -143,11 +139,12 @@ public func IceScreenMediaMain() {
                 do {
                     let request = try JSONDecoder().decode(MediaRequest.self, from: Data(line.utf8))
                     DispatchQueue.main.async { bridge.receive(request) }
-                } catch { MediaBridge.output(.init(error: "媒体控制请求格式错误。")); exit(65) }
+                } catch { MediaBridge.output(.init(errorCode: .invalidRequest)); exit(65) }
             }
             exit(0)
         }
         withExtendedLifetime(bridge) { RunLoop.main.run() }
-    } catch { MediaBridge.output(.init(error: error.localizedDescription)); exit(69) }
+    } catch let error as MediaServiceError { MediaBridge.output(.init(errorCode: error)); exit(69) }
+    catch { MediaBridge.output(.init(error: error.localizedDescription)); exit(69) }
 }
 #endif

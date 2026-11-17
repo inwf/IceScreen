@@ -24,7 +24,7 @@ final class DetectionActions: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
             DispatchQueue.main.async {
                 if let error { self?.onError?(error.localizedDescription) }
-                else if !granted { self?.onError?("通知尚未允许，可在系统设置 → 通知 → IceScreen 中开启。浮窗状态提示仍然可用。") }
+                else if !granted { self?.onError?(L10n.text("通知尚未允许，可在系统设置 → 通知 → IceScreen 中开启。浮窗状态提示仍然可用。", "Notifications are disabled. Enable them in System Settings → Notifications → IceScreen. Panel status hints remain available.")) }
             }
         }
     }
@@ -33,7 +33,7 @@ final class DetectionActions: NSObject, UNUserNotificationCenterDelegate {
         if preferences.detectionNotifications {
             let content = UNMutableNotificationContent()
             content.title = session.appName
-            content.body = event == .idle ? "\(session.title)：内容已停止变化。" : "\(session.title)：检测到新的画面变化。"
+            content.body = event == .idle ? L10n.text("\(session.title)：内容已停止变化。", "\(session.title): content has stopped changing.") : L10n.text("\(session.title)：检测到新的画面变化。", "\(session.title): new content changes detected.")
             content.sound = .default
             content.userInfo = ["session": session.id.uuidString]
             let request = UNNotificationRequest(identifier: session.id.uuidString + "." + event.rawValue,
@@ -69,16 +69,16 @@ final class DetectionActions: NSObject, UNUserNotificationCenterDelegate {
                 guard let self, self.commands[id]?.token == token else { return }
                 kill(-process.processIdentifier, SIGKILL)
                 self.commands.removeValue(forKey: id)?.timeout.cancel()
-                if process.terminationStatus != 0 { self.onError?("检测命令执行失败，退出状态：\(process.terminationStatus)。") }
+                if process.terminationStatus != 0 { self.onError?(L10n.text("检测命令执行失败，退出状态：\(process.terminationStatus)。", "Detection command failed with exit status \(process.terminationStatus).")) }
             }
         }
         do { try process.run() }
-        catch { onError?("无法启动检测命令：\(error.localizedDescription)"); return }
+        catch { onError?(L10n.text("无法启动检测命令：\(error.localizedDescription)", "Unable to start detection command: \(error.localizedDescription)")); return }
         let timer = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
             guard let self, self.commands[id]?.token == token else { return }
             self.stopCommand(id)
-            self.onError?("检测命令超过 \(Int(timeout)) 秒，已终止。")
+            self.onError?(L10n.text("检测命令超过 \(Int(timeout)) 秒，已终止。", "Detection command exceeded \(Int(timeout)) seconds and was terminated."))
         }
         commands[id] = Command(token: token, process: process, timeout: timer)
     }

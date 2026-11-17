@@ -17,7 +17,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Section("偏好设置") {
+                Section(L10n.text("偏好设置", "Preferences")) {
                     ForEach(SettingsPage.allCases.filter { $0 != .about }) { item in
                         Label(item.title, systemImage: item.icon)
                             .tag(item)
@@ -53,6 +53,7 @@ struct SettingsView: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minHeight: 540, idealHeight: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.locale, store.value.language.locale)
         .onReceive(model.$screenPermission.removeDuplicates()) { screenPermission = $0 }
         .onReceive(model.$accessibilityPermission.removeDuplicates()) { accessibilityPermission = $0 }
         .onReceive(model.$hotkeysActive.removeDuplicates()) { hotkeysActive = $0 }
@@ -61,52 +62,60 @@ struct SettingsView: View {
         .alert("IceScreen", isPresented: Binding(get: { displayedError != nil }, set: {
             if !$0 { displayedError = nil; model.error = nil }
         })) {
-            Button("好", role: .cancel) { model.error = nil }
+            Button(L10n.text("好", "OK"), role: .cancel) { model.error = nil }
         } message: { Text(displayedError ?? "") }
     }
 
     private var general: some View {
         Form {
-            Section("启动") {
-                Toggle("登录时启动 IceScreen", isOn: Binding(get: { loginEnabled }, set: model.setLaunchAtLogin))
-                Toggle("显示菜单栏图标", isOn: $store.value.showMenuBarIcon)
-                Text("隐藏图标后仍会继续运行。再次打开 IceScreen 可以回到设置。")
+            Section(L10n.text("语言", "Language")) {
+                Picker(L10n.text("界面语言", "App language"), selection: $store.value.language) {
+                    ForEach(AppLanguage.allCases, id: \.self) { Text($0.name).tag($0) }
+                }
+                .accessibilityIdentifier("settings.language")
+                Text(L10n.text("切换后立即生效。", "Changes take effect immediately."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("系统权限") {
-                permissionRow("屏幕录制", granted: screenPermission, action: model.requestScreenPermission)
-                permissionRow("辅助功能", granted: accessibilityPermission, action: model.requestAccessibility)
+            Section(L10n.text("启动", "Startup")) {
+                Toggle(L10n.text("登录时启动 IceScreen", "Launch IceScreen at login"), isOn: Binding(get: { loginEnabled }, set: model.setLaunchAtLogin))
+                Toggle(L10n.text("显示菜单栏图标", "Show menu bar icon"), isOn: $store.value.showMenuBarIcon)
+                Text(L10n.text("隐藏图标后仍会继续运行。再次打开 IceScreen 可以回到设置。", "IceScreen keeps running when the icon is hidden. Open the app again to access settings."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section(L10n.text("系统权限", "System permissions")) {
+                permissionRow(L10n.text("屏幕录制", "Screen Recording"), granted: screenPermission, action: model.requestScreenPermission)
+                permissionRow(L10n.text("辅助功能", "Accessibility"), granted: accessibilityPermission, action: model.requestAccessibility)
                 if !hotkeysActive && accessibilityPermission {
-                    Label("全局按键尚未启用，请检查系统的输入监控权限。", systemImage: "exclamationmark.triangle")
+                    Label(L10n.text("全局按键尚未启用，请检查系统的输入监控权限。", "Global shortcuts are unavailable. Check Input Monitoring permission in System Settings."), systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Button("重新检查权限") { model.checkPermissions() }
+                Button(L10n.text("重新检查权限", "Check permissions again")) { model.checkPermissions() }
             }
         }.formStyle(.grouped)
     }
 
     private var floatingWindows: some View {
         Form {
-            Section("显示与位置") {
-                Toggle("多窗口模式", isOn: $store.value.multiWindow)
-                Toggle("快速捕获时智能识别局部边界", isOn: $store.value.smartRegionCapture)
-                Text("识别鼠标所在的图片、视频或内容区域，并裁去对称黑白边框。没有合适边界时放大鼠标附近的区域。")
+            Section(L10n.text("显示与位置", "Display and position")) {
+                Toggle(L10n.text("多窗口模式", "Allow multiple panels"), isOn: $store.value.multiWindow)
+                Toggle(L10n.text("快速捕获时智能识别局部边界", "Detect content boundaries during quick capture"), isOn: $store.value.smartRegionCapture)
+                Text(L10n.text("识别鼠标所在的图片、视频或内容区域，并裁去对称黑白边框。没有合适边界时放大鼠标附近的区域。", "Detect the image, video, or content under the pointer and crop symmetric black or white borders. If no boundary is found, zoom into the area around the pointer."))
                     .font(.caption).foregroundStyle(.secondary)
-                Picker("出现位置", selection: $store.value.panelPosition) {
+                Picker(L10n.text("出现位置", "Initial position"), selection: $store.value.panelPosition) {
                     ForEach(ZoomAnchor.allCases, id: \.self) { Text(positionName($0)).tag($0) }
                 }
-                Toggle("显示在全屏桌面空间", isOn: $store.value.showOnFullscreenSpaces)
+                Toggle(L10n.text("显示在全屏桌面空间", "Show in full-screen Spaces"), isOn: $store.value.showOnFullscreenSpaces)
             }
-            Section("来源窗口与预览") {
-                Toggle("单击定位来源窗口并保留浮窗", isOn: $store.value.clickToFocus)
-                Text("单击浮窗定位来源窗口并保留浮窗，双击定位后关闭浮窗。")
+            Section(L10n.text("来源窗口与预览", "Source window and preview")) {
+                Toggle(L10n.text("单击定位来源窗口并保留浮窗", "Click to focus the source and keep the panel"), isOn: $store.value.clickToFocus)
+                Text(L10n.text("单击浮窗定位来源窗口并保留浮窗，双击定位后关闭浮窗。", "Click a panel to focus its source and keep the panel. Double-click to focus the source and close the panel."))
                     .font(.caption).foregroundStyle(.secondary)
-                Picker("来源窗口获得焦点时", selection: $store.value.sourceFocusBehavior) {
-                    Text("保持浮窗").tag(SourceFocusBehavior.keep)
-                    Text("暂停捕获").tag(SourceFocusBehavior.pause)
-                    Text("关闭浮窗").tag(SourceFocusBehavior.close)
+                Picker(L10n.text("来源窗口获得焦点时", "When the source gains focus"), selection: $store.value.sourceFocusBehavior) {
+                    Text(L10n.text("保持浮窗", "Keep panel")).tag(SourceFocusBehavior.keep)
+                    Text(L10n.text("暂停捕获", "Pause capture")).tag(SourceFocusBehavior.pause)
+                    Text(L10n.text("关闭浮窗", "Close panel")).tag(SourceFocusBehavior.close)
                 }
-                Toggle("Space 预览来源窗口", isOn: $store.value.quickLook)
+                Toggle(L10n.text("Space 预览来源窗口", "Preview source with Space"), isOn: $store.value.quickLook)
             }
             frameRateSettings
         }.formStyle(.grouped)
@@ -115,20 +124,20 @@ struct SettingsView: View {
     private var frameRateSettings: some View {
         Group {
             Section {
-                Picker("默认帧率", selection: $store.value.defaultFPS) {
+                Picker(L10n.text("默认帧率", "Default frame rate"), selection: $store.value.defaultFPS) {
                     ForEach(Preferences.frameRates, id: \.self) { Text("\($0) FPS").tag($0) }
                 }
-            } header: { Text("画面与性能") } footer: {
-                Text("默认 10 FPS。静态进度可用 1 FPS，视频可用 30 或 60 FPS。悬停时按 F 打开帧率菜单，选择会按应用保存。")
+            } header: { Text(L10n.text("画面与性能", "Capture and performance")) } footer: {
+                Text(L10n.text("默认 10 FPS。静态进度可用 1 FPS，视频可用 30 或 60 FPS。悬停时按 F 打开帧率菜单，选择会按应用保存。", "The default is 10 FPS. Use 1 FPS for static progress or 30–60 FPS for video. Hover and press F to choose a frame rate, saved per app."))
             }
             if !store.value.appFrameRates.isEmpty {
-                Section("应用帧率") {
+                Section(L10n.text("应用帧率", "Frame rates by app")) {
                     ForEach(store.value.appFrameRates.keys.sorted(), id: \.self) { app in
                         HStack {
                             Text(app).lineLimit(1)
                             Spacer()
                             Text("\(store.value.appFrameRates[app]!) FPS").foregroundStyle(.secondary)
-                            Button("重置") {
+                            Button(L10n.text("重置", "Reset")) {
                                 store.value.appFrameRates.removeValue(forKey: app)
                                 model.sessions.filter { $0.bundleID == app }.forEach { $0.setFPS(store.value.defaultFPS) }
                             }.controlSize(.small)
@@ -141,20 +150,20 @@ struct SettingsView: View {
 
     private var media: some View {
         Form {
-            Section("播放控制") {
-                Toggle("显示来源媒体的播放控制", isOn: $store.value.mediaControls)
-                Toggle("显示进度条并允许调整进度", isOn: $store.value.mediaSeek).disabled(!store.value.mediaControls)
-                Toggle("轻按 Space 播放或暂停", isOn: $store.value.mediaSpace).disabled(!store.value.mediaControls)
-                Text("鼠标悬停浮窗时显示播放、暂停、上一首和下一首。媒体需要向系统提供播放状态；直播或禁止跳转的内容不显示进度条。")
+            Section(L10n.text("播放控制", "Playback controls")) {
+                Toggle(L10n.text("显示来源媒体的播放控制", "Show source media controls"), isOn: $store.value.mediaControls)
+                Toggle(L10n.text("显示进度条并允许调整进度", "Show playback progress and allow seeking"), isOn: $store.value.mediaSeek).disabled(!store.value.mediaControls)
+                Toggle(L10n.text("轻按 Space 播放或暂停", "Tap Space to play or pause"), isOn: $store.value.mediaSpace).disabled(!store.value.mediaControls)
+                Text(L10n.text("鼠标悬停浮窗时显示播放、暂停、上一首和下一首。媒体需要向系统提供播放状态；直播或禁止跳转的内容不显示进度条。", "Hover to show playback and track controls. The source must provide system media information. Live streams and media that cannot seek have no progress slider."))
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Music、TV、Spotify、Swinsian 和 VLC 的进度通过应用自动化调整，首次使用时请允许系统的自动化请求。")
+                Text(L10n.text("Music、TV、Spotify、Swinsian 和 VLC 的进度通过应用自动化调整，首次使用时请允许系统的自动化请求。", "Seeking in Music, TV, Spotify, Swinsian, and VLC uses app automation. Allow the system automation request on first use."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("快捷操作") {
-                LabeledContent("轻按 Space", value: "播放或暂停")
-                LabeledContent("长按 Space", value: "预览来源窗口，松开关闭")
-                LabeledContent("← / →", value: "后退 / 前进 5 秒")
-                Text("长按预览遵循“浮窗”页面的 Space 预览开关。未识别到媒体的浮窗继续使用原有的 Space 预览操作。")
+            Section(L10n.text("快捷操作", "Quick actions")) {
+                LabeledContent(L10n.text("轻按 Space", "Tap Space"), value: L10n.text("播放或暂停", "Play or pause"))
+                LabeledContent(L10n.text("长按 Space", "Hold Space"), value: L10n.text("预览来源窗口，松开关闭", "Preview source; release to close"))
+                LabeledContent("← / →", value: L10n.text("后退 / 前进 5 秒", "Back / forward 5 seconds"))
+                Text(L10n.text("长按预览遵循“浮窗”页面的 Space 预览开关。未识别到媒体的浮窗继续使用原有的 Space 预览操作。", "Hold-to-preview follows the Space preview setting under Panels. Panels without recognized media keep the usual Space preview behavior."))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.formStyle(.grouped)
@@ -163,31 +172,31 @@ struct SettingsView: View {
     private var detection: some View {
         Form {
             Section {
-                Toggle("检测内容空闲", isOn: $store.value.idleDetection)
-                Picker("保持静止多久后提醒", selection: $store.value.idleSeconds) {
-                    ForEach([5.0, 10, 20, 30, 60, 120], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
+                Toggle(L10n.text("检测内容空闲", "Detect idle content"), isOn: $store.value.idleDetection)
+                Picker(L10n.text("保持静止多久后提醒", "Notify after idle for"), selection: $store.value.idleSeconds) {
+                    ForEach([5.0, 10, 20, 30, 60, 120], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds")).tag($0) }
                 }.disabled(!store.value.idleDetection)
-                Toggle("检测画面变化", isOn: $store.value.changeDetection)
-                Picker("变化检测前的安静时间", selection: $store.value.changeSeconds) {
-                    ForEach([1.0, 5, 10, 20, 30, 60, 120], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
+                Toggle(L10n.text("检测画面变化", "Detect content changes"), isOn: $store.value.changeDetection)
+                Picker(L10n.text("变化检测前的安静时间", "Quiet time before detecting changes"), selection: $store.value.changeSeconds) {
+                    ForEach([1.0, 5, 10, 20, 30, 60, 120], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds")).tag($0) }
                 }.disabled(!store.value.changeDetection)
-                Toggle("检测细微变化", isOn: $store.value.sensitiveDetection)
-            } header: { Text("检测条件") } footer: {
-                Text("空闲检测会在画面停止变化时提醒；变化检测会在画面安静一段时间后重新出现变化时提醒。细微变化适用于进度条和加载指示器。悬停时使用 D、C、S 分别切换。")
+                Toggle(L10n.text("检测细微变化", "Detect subtle changes"), isOn: $store.value.sensitiveDetection)
+            } header: { Text(L10n.text("检测条件", "Detection rules")) } footer: {
+                Text(L10n.text("空闲检测会在画面停止变化时提醒；变化检测会在画面安静一段时间后重新出现变化时提醒。细微变化适用于进度条和加载指示器。悬停时使用 D、C、S 分别切换。", "Idle detection notifies you when content stops changing. Change detection notifies you when changes resume after a quiet period. Subtle detection suits progress bars and loading indicators. Hover and press D, C, or S to toggle each mode."))
             }
             Section {
-                Toggle("发送系统通知", isOn: $store.value.detectionNotifications)
-                Text("点击通知可以定位来源窗口。隐藏、暂停和睡眠期间停止检测，恢复捕获后重新开始计时。")
+                Toggle(L10n.text("发送系统通知", "Send system notifications"), isOn: $store.value.detectionNotifications)
+                Text(L10n.text("点击通知可以定位来源窗口。隐藏、暂停和睡眠期间停止检测，恢复捕获后重新开始计时。", "Click a notification to focus the source window. Detection stops while hidden, paused, or asleep and restarts its timer when capture resumes."))
                     .font(.caption).foregroundStyle(.secondary)
-            } header: { Text("提醒") }
-            Section("自动化") {
-                DisclosureGroup("运行 Shell 命令") {
-                    TextField("Shell 命令（留空时关闭）", text: $store.value.detectionCommand, axis: .vertical)
+            } header: { Text(L10n.text("提醒", "Notifications")) }
+            Section(L10n.text("自动化", "Automation")) {
+                DisclosureGroup(L10n.text("运行 Shell 命令", "Run a shell command")) {
+                    TextField(L10n.text("Shell 命令（留空时关闭）", "Shell command (leave empty to disable)"), text: $store.value.detectionCommand, axis: .vertical)
                         .font(.system(.body, design: .monospaced)).lineLimit(3...6)
-                    Picker("执行超时", selection: $store.value.detectionCommandTimeout) {
-                        ForEach([5.0, 15, 30, 60, 120, 300], id: \.self) { Text("\(Int($0)) 秒").tag($0) }
+                    Picker(L10n.text("执行超时", "Execution timeout"), selection: $store.value.detectionCommandTimeout) {
+                        ForEach([5.0, 15, 30, 60, 120, 300], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds")).tag($0) }
                     }
-                    Text("通过 /bin/sh 执行。提供 ICESCREEN_EVENT（idle/change）、ICESCREEN_APP、ICESCREEN_BUNDLE_ID、ICESCREEN_WINDOW_ID 和 ICESCREEN_WINDOW_TITLE 环境变量。每个浮窗同时运行一个命令；执行期间忽略新的命令触发。超时或关闭浮窗会终止命令进程组。")
+                    Text(L10n.text("通过 /bin/sh 执行。提供 ICESCREEN_EVENT（idle/change）、ICESCREEN_APP、ICESCREEN_BUNDLE_ID、ICESCREEN_WINDOW_ID 和 ICESCREEN_WINDOW_TITLE 环境变量。每个浮窗同时运行一个命令；执行期间忽略新的命令触发。超时或关闭浮窗会终止命令进程组。", "Runs through /bin/sh with ICESCREEN_EVENT (idle/change), ICESCREEN_APP, ICESCREEN_BUNDLE_ID, ICESCREEN_WINDOW_ID, and ICESCREEN_WINDOW_TITLE environment variables. Each panel runs one command at a time and ignores new triggers while it runs. A timeout or closing the panel terminates the command process group."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -197,11 +206,11 @@ struct SettingsView: View {
     private var keyboard: some View {
         Form {
             Section {
-                shortcutRow("捕获当前窗口", shortcut: $store.value.shortcut, action: .capture)
+                shortcutRow(L10n.text("捕获当前窗口", "Capture current window"), shortcut: $store.value.shortcut, action: .capture)
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("捕获窗口区域")
-                        Text(store.value.regionShortcut == nil ? "自动添加一个未使用的修饰键" : "独立快捷键")
+                        Text(L10n.text("捕获窗口区域", "Capture window region"))
+                        Text(store.value.regionShortcut == nil ? L10n.text("自动添加一个未使用的修饰键", "Automatically add an unused modifier") : L10n.text("独立快捷键", "Custom shortcut"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -211,69 +220,69 @@ struct SettingsView: View {
                         validate: { store.value.shortcutConflict($0, for: .region) })
                         .frame(width: 160, height: 28)
                     if store.value.regionShortcut != nil {
-                        Button("自动") {
+                        Button(L10n.text("自动", "Automatic")) {
                             if let candidate = store.value.shortcut.regionVariant,
                                let issue = store.value.shortcutConflict(candidate, for: .region) { model.error = issue }
                             else { store.value.regionShortcut = nil }
                         }.controlSize(.small)
                     }
                 }
-                Toggle("关闭所有浮窗快捷键", isOn: Binding(get: { store.value.closeAllShortcut != nil }, set: {
+                Toggle(L10n.text("关闭所有浮窗快捷键", "Enable shortcut to close all panels"), isOn: Binding(get: { store.value.closeAllShortcut != nil }, set: {
                     let candidate = Shortcut(keyCode: 35, command: true, function: false, shift: true, label: "P")
                     if $0, let issue = store.value.shortcutConflict(candidate, for: .closeAll) { model.error = issue }
                     else { store.value.closeAllShortcut = $0 ? candidate : nil }
                 }))
                 if store.value.closeAllShortcut != nil {
-                    shortcutRow("全部关闭", shortcut: Binding(get: { store.value.closeAllShortcut! }, set: { store.value.closeAllShortcut = $0 }), action: .closeAll)
+                    shortcutRow(L10n.text("全部关闭", "Close all panels"), shortcut: Binding(get: { store.value.closeAllShortcut! }, set: { store.value.closeAllShortcut = $0 }), action: .closeAll)
                 }
-                Button("恢复默认快捷键") {
+                Button(L10n.text("恢复默认快捷键", "Restore default shortcuts")) {
                     store.value.shortcut = Shortcut()
                     store.value.regionShortcut = nil
                     store.value.closeAllShortcut = nil
                 }.controlSize(.small)
-            } header: { Text("全局快捷键") } footer: {
-                Text("支持 ⌘、⌥、⌃、⇧ 和 fn 组合。例如 ⌘⇧I；其自动区域快捷键为 ⌥⇧⌘I。")
+            } header: { Text(L10n.text("全局快捷键", "Global shortcuts")) } footer: {
+                Text(L10n.text("支持 ⌘、⌥、⌃、⇧ 和 fn 组合。例如 ⌘⇧I；其自动区域快捷键为 ⌥⇧⌘I。", "Combine ⌘, ⌥, ⌃, ⇧, and fn. For example, ⌘⇧I automatically uses ⌥⇧⌘I for region capture."))
             }
             Section {
-                Picker("触发修饰键", selection: $store.value.triggerModifier) {
+                Picker(L10n.text("触发修饰键", "Trigger modifier"), selection: $store.value.triggerModifier) {
                     ForEach(TriggerModifier.allCases, id: \.self) { Text($0.display).tag($0) }
                 }
-            } header: { Text("修饰键手势") } footer: {
-                Text("轻按 \(store.value.triggerModifier.display) 隐藏或恢复浮窗，双击切换自动隐藏。系统设置 → 键盘可将 fn / 地球键设为「不执行操作」。")
+            } header: { Text(L10n.text("修饰键手势", "Modifier gestures")) } footer: {
+                Text(L10n.text("轻按 \(store.value.triggerModifier.display) 隐藏或恢复浮窗，双击切换自动隐藏。系统设置 → 键盘可将 fn / 地球键设为「不执行操作」。", "Tap \(store.value.triggerModifier.display) to hide or restore a panel; double-tap to toggle auto-hide. In System Settings → Keyboard, set the fn / Globe key to Do Nothing."))
             }
             Section {
-                Toggle("快速捕获局部区域", isOn: $store.value.quickRegionCapture)
+                Toggle(L10n.text("快速捕获局部区域", "Enable quick region capture"), isOn: $store.value.quickRegionCapture)
                 HStack {
-                    Text("捕获手势")
+                    Text(L10n.text("捕获手势", "Capture gesture"))
                     Spacer()
                     QuickCaptureRecorder(modifiers: $store.value.quickCaptureModifiers, monitor: model.hotkeys)
                         .frame(width: 210, height: 28)
                         .disabled(!store.value.quickRegionCapture)
                 }
-                Button("恢复默认捕获手势") { store.value.quickCaptureModifiers = .function }
+                Button(L10n.text("恢复默认捕获手势", "Restore default capture gesture")) { store.value.quickCaptureModifiers = .function }
                     .controlSize(.small)
-            } header: { Text("快速局部捕获") } footer: {
-                Text("点击捕获手势，按住需要的修饰键组合后全部松开保存，例如 ⌘⇧。在来源窗口中按住该组合并双击即可捕获；只有完整匹配的组合才会拦截点击。匹配组合的单击会等待系统双击判定后送达，拖动立即放行。")
+            } header: { Text(L10n.text("快速局部捕获", "Quick region capture")) } footer: {
+                Text(L10n.text("点击捕获手势，按住需要的修饰键组合后全部松开保存，例如 ⌘⇧。在来源窗口中按住该组合并双击即可捕获；只有完整匹配的组合才会拦截点击。匹配组合的单击会等待系统双击判定后送达，拖动立即放行。", "Click the gesture, hold your modifier combination (such as ⌘⇧), then release all keys to save. Hold that exact combination and double-click a source window to capture. Matching single clicks wait for the system double-click interval; dragging passes through immediately."))
             }
             Section {
-                DisclosureGroup("查看浮窗操作速查") {
-                    instruction("轻按 \(store.value.triggerModifier.display)", "隐藏 / 恢复浮窗")
-                    instruction("双击 \(store.value.triggerModifier.display)", "切换自动隐藏")
-                    instruction("Space", "预览来源窗口；长按松开关闭")
-                    instruction("Delete", "关闭浮窗（透明时也有效）")
-                    instruction("F", "打开应用帧率菜单")
-                    instruction("D", "切换内容空闲检测")
-                    instruction("C", "切换画面变化检测")
-                    instruction("S", "切换细微变化检测")
-                    instruction("双击", "定位来源窗口并关闭浮窗")
-                    instruction("单击", store.value.clickToFocus ? "定位来源窗口并保留浮窗" : "单击定位已关闭，可在「浮窗」中开启")
-                    instruction("⌘ + 拖动", "框选缩放区域")
-                    instruction("⌘ + 双击", "恢复完整画面")
-                    instruction("0", "恢复完整画面")
-                    instruction("滚动 / ⌘ + 滚动", "平移 / 缩放")
-                    instruction("捏合 / = / −", "缩放画面")
+                DisclosureGroup(L10n.text("查看浮窗操作速查", "Panel controls reference")) {
+                    instruction(L10n.text("轻按 \(store.value.triggerModifier.display)", "Tap \(store.value.triggerModifier.display)"), L10n.text("隐藏 / 恢复浮窗", "Hide / restore panel"))
+                    instruction(L10n.text("双击 \(store.value.triggerModifier.display)", "Double-tap \(store.value.triggerModifier.display)"), L10n.text("切换自动隐藏", "Toggle auto-hide"))
+                    instruction("Space", L10n.text("预览来源窗口；长按松开关闭", "Preview source; release after holding to close"))
+                    instruction("Delete", L10n.text("关闭浮窗（透明时也有效）", "Close panel, including when transparent"))
+                    instruction("F", L10n.text("打开应用帧率菜单", "Open frame rate menu"))
+                    instruction("D", L10n.text("切换内容空闲检测", "Toggle idle detection"))
+                    instruction("C", L10n.text("切换画面变化检测", "Toggle change detection"))
+                    instruction("S", L10n.text("切换细微变化检测", "Toggle subtle detection"))
+                    instruction(L10n.text("双击", "Double-click"), L10n.text("定位来源窗口并关闭浮窗", "Focus source and close panel"))
+                    instruction(L10n.text("单击", "Click"), store.value.clickToFocus ? L10n.text("定位来源窗口并保留浮窗", "Focus source and keep panel") : L10n.text("单击定位已关闭，可在「浮窗」中开启", "Click-to-focus is off; enable it under Panels"))
+                    instruction(L10n.text("⌘ + 拖动", "⌘ + drag"), L10n.text("框选缩放区域", "Select region to zoom"))
+                    instruction(L10n.text("⌘ + 双击", "⌘ + double-click"), L10n.text("恢复完整画面", "Restore full view"))
+                    instruction("0", L10n.text("恢复完整画面", "Restore full view"))
+                    instruction(L10n.text("滚动 / ⌘ + 滚动", "Scroll / ⌘ + scroll"), L10n.text("平移 / 缩放", "Pan / zoom"))
+                    instruction(L10n.text("捏合 / = / −", "Pinch / = / −"), L10n.text("缩放画面", "Zoom content"))
                 }
-            } footer: { Text("以上操作在鼠标位于浮窗上时生效。手动隐藏 60 秒后自动关闭。") }
+            } footer: { Text(L10n.text("以上操作在鼠标位于浮窗上时生效。手动隐藏 60 秒后自动关闭。", "These controls work while the pointer is over a panel. Manually hidden panels close after 60 seconds.")) }
         }.formStyle(.grouped)
     }
 
@@ -283,11 +292,11 @@ struct SettingsView: View {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
             VStack(spacing: 6) {
                 Text("IceScreen").font(.largeTitle.weight(.semibold))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L10n.text("开发构建", "Development build"))
                     .foregroundStyle(.secondary)
             }
-            Text("让你关注的窗口，留在眼前。")
-            Text("happy · 好朋友")
+            Text(L10n.text("让你关注的窗口，留在眼前。", "Keep the windows you care about in view."))
+            Text(L10n.text("happy · 好朋友", "happy · good friends"))
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
             VStack(spacing: 4) {
@@ -310,8 +319,8 @@ struct SettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            if granted { Label("已允许", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-            else { Button("允许…", action: action) }
+            if granted { Label(L10n.text("已允许", "Granted"), systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+            else { Button(L10n.text("允许…", "Allow…"), action: action) }
         }
     }
 
@@ -321,9 +330,9 @@ struct SettingsView: View {
 
     private func positionName(_ anchor: ZoomAnchor) -> String {
         switch anchor {
-        case .topLeft: return "左上"; case .top: return "上方"; case .topRight: return "右上"
-        case .left: return "左侧"; case .center: return "居中"; case .right: return "右侧"
-        case .bottomLeft: return "左下"; case .bottom: return "下方"; case .bottomRight: return "右下"
+        case .topLeft: return L10n.text("左上", "Top left"); case .top: return L10n.text("上方", "Top"); case .topRight: return L10n.text("右上", "Top right")
+        case .left: return L10n.text("左侧", "Left"); case .center: return L10n.text("居中", "Center"); case .right: return L10n.text("右侧", "Right")
+        case .bottomLeft: return L10n.text("左下", "Bottom left"); case .bottom: return L10n.text("下方", "Bottom"); case .bottomRight: return L10n.text("右下", "Bottom right")
         }
     }
 }
@@ -333,13 +342,13 @@ private enum SettingsPage: CaseIterable, Hashable, Identifiable {
     var id: Self { self }
     var title: String {
         switch self {
-        case .general: return "通用"
-        case .floatingWindows: return "浮窗"
-        case .appearance: return "外观"
-        case .media: return "媒体"
-        case .detection: return "检测与自动化"
-        case .keyboard: return "快捷键"
-        case .about: return "关于"
+        case .general: return L10n.text("通用", "General")
+        case .floatingWindows: return L10n.text("浮窗", "Panels")
+        case .appearance: return L10n.text("外观", "Appearance")
+        case .media: return L10n.text("媒体", "Media")
+        case .detection: return L10n.text("检测与自动化", "Detection & Automation")
+        case .keyboard: return L10n.text("快捷键", "Shortcuts")
+        case .about: return L10n.text("关于", "About")
         }
     }
     var icon: String {
@@ -379,13 +388,13 @@ struct QuickCaptureRecorder: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: ShortcutButton, context: Context) {
-        let title = "\(modifiers.display) + 双击"
+        let title = L10n.text("\(modifiers.display) + 双击", "\(modifiers.display) + double-click")
         view.isEnabled = context.environment.isEnabled
         if !view.recording { view.title = title }
         view.savedTitle = title
         view.onRecordModifiers = { modifiers = $0 }
         view.onRecording = { monitor.recording = $0 }
-        view.setAccessibilityLabel("编辑快速捕获手势")
+        view.setAccessibilityLabel(L10n.text("编辑快速捕获手势", "Edit quick capture gesture"))
         view.setAccessibilityValue(title)
     }
     static func dismantleNSView(_ view: ShortcutButton, coordinator: ()) { view.finishRecording() }
@@ -416,7 +425,7 @@ final class ShortcutButton: NSButton {
         recording = true
         onRecording?(true)
         modifierRecording.reset()
-        title = modifierOnly ? "按住组合后松开 · Esc 取消" : "按下快捷键 · Esc 取消"
+        title = modifierOnly ? L10n.text("按住组合后松开 · Esc 取消", "Hold, release · Esc cancels") : L10n.text("按下快捷键 · Esc 取消", "Press keys · Esc cancels")
         let mask: NSEvent.EventTypeMask = modifierOnly ? [.keyDown, .flagsChanged] : .keyDown
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self, self.recording else { return event }
@@ -453,23 +462,23 @@ final class ShortcutButton: NSButton {
         if modifierOnly {
             guard event.type == .flagsChanged else {
                 modifierRecording.rejectUntilRelease()
-                title = "仅使用修饰键 · Esc 取消"
+                title = L10n.text("仅使用修饰键 · Esc 取消", "Modifiers only · Esc cancels")
                 return
             }
             let held = QuickCaptureModifiers(command: flags.contains(.command), option: flags.contains(.option),
                                              control: flags.contains(.control), shift: flags.contains(.shift),
                                              function: flags.contains(.function))
             if let value = modifierRecording.update(held) {
-                savedTitle = "\(value.display) + 双击"
+                savedTitle = L10n.text("\(value.display) + 双击", "\(value.display) + double-click")
                 onRecordModifiers?(value)
                 finishRecording()
             } else if !modifierRecording.candidate.isEmpty {
-                title = "\(modifierRecording.candidate.display) + 双击 · 松开保存"
+                title = L10n.text("\(modifierRecording.candidate.display) + 双击 · 松开保存", "\(modifierRecording.candidate.display) · Release to save")
             }
             return
         }
         guard !flags.intersection([.command, .control, .option, .function, .shift]).isEmpty else {
-            title = "请同时按住修饰键"; return
+            title = L10n.text("请同时按住修饰键", "Hold a modifier key"); return
         }
         let label: String
         switch event.keyCode {
@@ -478,7 +487,7 @@ final class ShortcutButton: NSButton {
         }
         let value = Shortcut(keyCode: event.keyCode, command: flags.contains(.command), option: flags.contains(.option),
                              control: flags.contains(.control), function: flags.contains(.function), shift: flags.contains(.shift), label: label)
-        if let issue = validate?(value) { title = "快捷键冲突，请重新输入"; toolTip = issue; NSSound.beep(); return }
+        if let issue = validate?(value) { title = L10n.text("快捷键冲突，请重新输入", "Conflict; try again"); toolTip = issue; NSSound.beep(); return }
         savedTitle = value.display
         onRecord?(value)
         finishRecording()

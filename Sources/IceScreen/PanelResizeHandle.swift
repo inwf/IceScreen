@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import IceCore
 
 final class PanelResizeHandle: NSControl {
     weak var owner: CaptureSession?
@@ -10,10 +11,14 @@ final class PanelResizeHandle: NSControl {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        toolTip = "拖动调整浮窗大小"
-        setAccessibilityLabel("调整浮窗大小")
+        updateLocalization()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    func updateLocalization() {
+        toolTip = L10n.text("拖动调整浮窗大小", "Drag to resize panel")
+        setAccessibilityLabel(L10n.text("调整浮窗大小", "Resize panel"))
+    }
 
     override func resetCursorRects() {
         if #available(macOS 15.0, *) {

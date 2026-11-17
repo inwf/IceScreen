@@ -56,6 +56,10 @@ git push origin v1.2.8
 
 ## 使用
 
+在「设置 → 通用 → 界面语言」选择「简体中文」或「English」。切换后设置页面、菜单和已打开浮窗的控件与提示立即更新，语言选择会自动保存；已有配置默认保持中文。系统权限对话框和其他应用的窗口标题使用其原有语言。
+
+Choose **简体中文** or **English** in **Settings → General → App language**. Settings, menus, and existing panel controls and hints update immediately, and your choice is saved for the next launch. Existing preferences default to Chinese. System permission dialogs and other apps’ window titles keep their original language.
+
 菜单栏菜单提供捕获、浮窗操作、设置和退出。设置左侧按用途分为通用、快捷键、浮窗、外观、媒体、检测与自动化、关于。通用管理启动和权限；快捷键集中管理捕获、关闭及修饰键手势；浮窗管理智能局部捕获、来源交互、Space 预览、位置和帧率；媒体管理播放、进度及 Space 操作。窗口和导航列可以调整大小。
 
 外观页面顶部提供固定的即时预览，可选择本机图片或使用内置文字与图形示例。调整圆角、透明度、锐度增强及边缘效果时，预览和当前浮窗即时更新。鼠标移入画面直接显示按钮、边缘阴影和提示；开启外观页的自动隐藏后，预览随鼠标移入淡出、移出恢复。「对比原图」临时查看增强前的画面，「恢复示例」清除自选图片。图片仅在本机解码，预览无需屏幕录制权限。

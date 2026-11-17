@@ -17,11 +17,11 @@ final class MediaController {
         guard process == nil else { return }
         automation.onError = { [weak self] in self?.onError?($0) }
         automation.onComplete = { [weak self] in self?.send(.init(action: "refresh")) }
-        guard let resources = Bundle.main.resourceURL else { onError?("找不到媒体控制资源。"); return }
+        guard let resources = Bundle.main.resourceURL else { onError?(L10n.text("找不到媒体控制资源。", "Media control resources were not found.")); return }
         let library = Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/libIceMediaBridge.dylib")
         let script = resources.appendingPathComponent("media-bridge.pl")
         guard FileManager.default.fileExists(atPath: library.path), FileManager.default.fileExists(atPath: script.path) else {
-            onError?("媒体辅助进程缺失，请使用完整的 IceScreen.app。"); return
+            onError?(L10n.text("媒体辅助进程缺失，请使用完整的 IceScreen.app。", "The media helper is missing. Use the complete IceScreen.app bundle.")); return
         }
         let child = Process(), output = Pipe(), commands = Pipe()
         child.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
@@ -39,10 +39,11 @@ final class MediaController {
                     guard let self, !Task.isCancelled, number == self.generation else { return }
                     let response = try JSONDecoder().decode(MediaResponse.self, from: Data(line.utf8))
                     if let snapshots = response.snapshots { self.snapshots = snapshots; self.onChange?(snapshots) }
-                    if let error = response.error { self.onError?(error) }
+                    if let code = response.errorCode { self.onError?(code.localizedDescription) }
+                    else if let error = response.error { self.onError?(error) }
                 }
                 guard let self, !Task.isCancelled, number == self.generation else { return }
-                self.stop(); self.onError?("媒体辅助进程已经停止。请在设置中重新开启媒体控制。")
+                self.stop(); self.onError?(L10n.text("媒体辅助进程已经停止。请在设置中重新开启媒体控制。", "The media helper stopped. Enable media controls again in Settings."))
             } catch {
                 guard let self, !Task.isCancelled, number == self.generation else { return }
                 self.stop(); self.onError?(error.localizedDescription)

@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import ImageIO
 import CoreVideo
+import IceCore
 
 struct AppearanceImage {
     let id = UUID()
@@ -43,8 +44,8 @@ struct AppearanceImage {
         case unreadable, allocation
         var errorDescription: String? {
             switch self {
-            case .unreadable: return "无法解码这张图片。请选择可读取的 PNG、JPEG、HEIC 或其他系统支持的图片。"
-            case .allocation: return "无法分配图片预览所需的内存。"
+            case .unreadable: return L10n.text("无法解码这张图片。请选择可读取的 PNG、JPEG、HEIC 或其他系统支持的图片。", "Unable to decode this image. Choose a readable PNG, JPEG, HEIC, or another supported image format.")
+            case .allocation: return L10n.text("无法分配图片预览所需的内存。", "Unable to allocate memory for the image preview.")
             }
         }
     }

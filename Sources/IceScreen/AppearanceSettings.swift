@@ -16,68 +16,68 @@ struct AppearanceSettings: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("即时预览").font(.headline)
+                    Text(L10n.text("即时预览", "Live preview")).font(.headline)
                     Spacer()
                     if images.isLoading { ProgressView().controlSize(.small) }
-                    Button("选择图片…") { showImagePicker = true }
+                    Button(L10n.text("选择图片…", "Choose image…")) { showImagePicker = true }
                     if images.image != nil {
-                        Button("恢复示例") { images.reset() }
+                        Button(L10n.text("恢复示例", "Reset sample")) { images.reset() }
                     }
-                    Toggle("对比原图", isOn: $showOriginal).toggleStyle(.button)
-                        .help("临时查看未增强的示例画面，不改变浮窗设置")
+                    Toggle(L10n.text("对比原图", "Compare original"), isOn: $showOriginal).toggleStyle(.button)
+                        .help(L10n.text("临时查看未增强的示例画面，不改变浮窗设置", "Preview the original image without changing panel settings"))
                 }
                 .controlSize(.small)
                 AppearancePreview(preferences: store.value, original: showOriginal, image: images.image)
                     .frame(height: 204)
-                    .accessibilityLabel("浮窗外观示例")
-                    .accessibilityValue("圆角 \(Int(store.value.cornerRadius)) 点，透明度 \(Int(store.value.panelOpacity * 100))%，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")")
-                Text(showOriginal ? "正在对比原始画面 · 圆角和透明度仍按当前设置显示" : (images.image?.name ?? "内置文字与图形示例"))
+                    .accessibilityLabel(L10n.text("浮窗外观示例", "Panel appearance preview"))
+                    .accessibilityValue(L10n.text("圆角 \(Int(store.value.cornerRadius)) 点，透明度 \(Int(store.value.panelOpacity * 100))%，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")", "Corner radius \(Int(store.value.cornerRadius)) points, opacity \(Int(store.value.panelOpacity * 100))%, \(showOriginal || !store.value.enhanceContrast ? "original image" : "enhanced contrast and sharpness")"))
+                Text(showOriginal ? L10n.text("正在对比原始画面 · 圆角和透明度仍按当前设置显示", "Comparing original · current corner radius and opacity still apply") : (images.image?.name ?? L10n.text("内置文字与图形示例", "Built-in text and graphics sample")))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Text(store.value.autoHide ? "鼠标移入后按隐藏时透明度显示，移出后恢复。" : "鼠标移入画面预览按钮、边缘阴影和操作提示。")
+                Text(store.value.autoHide ? L10n.text("鼠标移入后按隐藏时透明度显示，移出后恢复。", "Hover to preview auto-hide opacity; move away to restore.") : L10n.text("鼠标移入画面预览按钮、边缘阴影和操作提示。", "Hover to preview controls, edge shading, and hints."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 12)
             Divider()
             Form {
-                Section("形状与透明度") {
-                    DefaultValueSlider(title: "圆角", value: $store.value.cornerRadius,
+                Section(L10n.text("形状与透明度", "Shape and opacity")) {
+                    DefaultValueSlider(id: "cornerRadius", title: L10n.text("圆角", "Corner radius"), value: $store.value.cornerRadius,
                                        range: 0...30, step: 1, defaultValue: defaults.cornerRadius,
                                        format: { "\(Int($0.rounded())) pt" })
-                    DefaultValueSlider(title: "透明度", value: $store.value.panelOpacity,
+                    DefaultValueSlider(id: "panelOpacity", title: L10n.text("透明度", "Opacity"), value: $store.value.panelOpacity,
                                        range: 0.35...1, step: 0.01, defaultValue: defaults.panelOpacity,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                 }
                 Section {
-                    Toggle("增强对比度和锐度", isOn: $store.value.enhanceContrast)
-                    DefaultValueSlider(title: "对比度强度", value: $store.value.contrastStrength,
+                    Toggle(L10n.text("增强对比度和锐度", "Enhance contrast and sharpness"), isOn: $store.value.enhanceContrast)
+                    DefaultValueSlider(id: "contrastStrength", title: L10n.text("对比度强度", "Contrast"), value: $store.value.contrastStrength,
                                        range: 0...1, step: 0.01, defaultValue: defaults.contrastStrength,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                         .disabled(!store.value.enhanceContrast)
-                    DefaultValueSlider(title: "锐化强度", value: $store.value.sharpnessStrength,
+                    DefaultValueSlider(id: "sharpnessStrength", title: L10n.text("锐化强度", "Sharpness"), value: $store.value.sharpnessStrength,
                                        range: 0...1, step: 0.01, defaultValue: defaults.sharpnessStrength,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                         .disabled(!store.value.enhanceContrast)
-                } header: { Text("画面清晰度") } footer: {
-                    Text("两项强度均可按 1% 调整。0% 保留原始效果，使用「对比原图」查看增强前后的差异。")
+                } header: { Text(L10n.text("画面清晰度", "Image clarity")) } footer: {
+                    Text(L10n.text("两项强度均可按 1% 调整。0% 保留原始效果，使用「对比原图」查看增强前后的差异。", "Adjust each strength in 1% steps. At 0%, the original image is preserved. Use Compare original to see the difference."))
                 }
                 Section {
-                    Toggle("鼠标移入时自动隐藏", isOn: $store.value.autoHide)
-                    DefaultValueSlider(title: "隐藏时透明度", value: $store.value.autoHideOpacity,
+                    Toggle(L10n.text("鼠标移入时自动隐藏", "Auto-hide on hover"), isOn: $store.value.autoHide)
+                    DefaultValueSlider(id: "autoHideOpacity", title: L10n.text("隐藏时透明度", "Hidden opacity"), value: $store.value.autoHideOpacity,
                                        range: 0...1, step: 0.01, defaultValue: defaults.autoHideOpacity,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
-                } header: { Text("自动隐藏") } footer: {
-                    Text("0% 完全透明，100% 完全不透明。鼠标移入后保持穿透，移出后恢复正常透明度。双击 \(store.value.triggerModifier.display) 开启自动隐藏的浮窗也使用此设置。")
+                } header: { Text(L10n.text("自动隐藏", "Auto-hide")) } footer: {
+                    Text(L10n.text("0% 完全透明，100% 完全不透明。鼠标移入后保持穿透，移出后恢复正常透明度。双击 \(store.value.triggerModifier.display) 开启自动隐藏的浮窗也使用此设置。", "0% is fully transparent; 100% is fully opaque. The pointer passes through while hovering. Move away to restore normal opacity. This also applies when auto-hide is enabled by double-tapping \(store.value.triggerModifier.display)."))
                 }
                 Section {
-                    Toggle("悬停时控件周围变暗", isOn: $store.value.dimOnHover)
-                    DefaultValueSlider(title: "边缘效果强度", value: $store.value.hoverBlur,
+                    Toggle(L10n.text("悬停时控件周围变暗", "Dim around controls on hover"), isOn: $store.value.dimOnHover)
+                    DefaultValueSlider(id: "hoverBlur", title: L10n.text("边缘效果强度", "Edge shading"), value: $store.value.hoverBlur,
                                        range: 0...1, step: 0.01, defaultValue: defaults.hoverBlur,
                                        format: { "\(Int(($0 * 100).rounded()))%" })
                         .disabled(!store.value.dimOnHover)
-                    Toggle("显示操作提示", isOn: $store.value.showHoverHints)
-                        .help("鼠标移入时在左下角显示常用操作，并跟随单击定位、Space 预览和缩放状态更新。")
-                } header: { Text("悬停外观") } footer: {
-                    Text("预览跟随鼠标自动展示当前设置。实际浮窗隐藏后，可双击 \(store.value.triggerModifier.display) 恢复显示和操作，或按 Delete 关闭。")
+                    Toggle(L10n.text("显示操作提示", "Show control hints"), isOn: $store.value.showHoverHints)
+                        .help(L10n.text("鼠标移入时在左下角显示常用操作，并跟随单击定位、Space 预览和缩放状态更新。", "Show common actions in the lower left on hover. Hints follow click-to-focus, Space preview, and zoom settings."))
+                } header: { Text(L10n.text("悬停外观", "Hover appearance")) } footer: {
+                    Text(L10n.text("预览跟随鼠标自动展示当前设置。实际浮窗隐藏后，可双击 \(store.value.triggerModifier.display) 恢复显示和操作，或按 Delete 关闭。", "Hover to preview your settings. When a panel is hidden, double-tap \(store.value.triggerModifier.display) to restore it and its controls, or press Delete to close it."))
                 }
             }.formStyle(.grouped)
         }
@@ -88,14 +88,15 @@ struct AppearanceSettings: View {
                 if (error as? CocoaError)?.code != .userCancelled { images.error = error.localizedDescription }
             }
         }
-        .alert("无法读取图片", isPresented: Binding(get: { images.error != nil }, set: { if !$0 { images.error = nil } })) {
-            Button("好", role: .cancel) { images.error = nil }
+        .alert(L10n.text("无法读取图片", "Unable to read image"), isPresented: Binding(get: { images.error != nil }, set: { if !$0 { images.error = nil } })) {
+            Button(L10n.text("好", "OK"), role: .cancel) { images.error = nil }
         } message: { Text(images.error ?? "") }
         .onDisappear { images.cancelLoading() }
     }
 }
 
 struct DefaultValueSlider: View {
+    let id: String
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -112,7 +113,7 @@ struct DefaultValueSlider: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(title).frame(width: 84, height: 22, alignment: .leading)
+            Text(title).frame(width: L10n.language == .english ? 112 : 84, height: 22, alignment: .leading)
             VStack(spacing: 0) {
                 Slider(value: sliderValue, in: range) { Text(title) }
                     .labelsHidden()
@@ -134,7 +135,7 @@ struct DefaultValueSlider: View {
                         VStack(spacing: 3) {
                             Circle().fill(.secondary).frame(width: 5, height: 5)
                                 .offset(x: center - origin - labelWidth / 2)
-                            Text("默认 \(format(defaultValue))")
+                            Text(L10n.text("默认 \(format(defaultValue))", "Default \(format(defaultValue))"))
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                         .frame(width: labelWidth, height: 28, alignment: .top)
@@ -142,10 +143,10 @@ struct DefaultValueSlider: View {
                     }
                     .buttonStyle(.plain)
                     .offset(x: origin)
-                    .help("恢复\(title)默认值：\(format(defaultValue))")
-                    .accessibilityLabel("恢复\(title)默认值")
+                    .help(L10n.text("恢复\(title)默认值：\(format(defaultValue))", "Reset \(title) to \(format(defaultValue))"))
+                    .accessibilityLabel(L10n.text("恢复\(title)默认值", "Reset \(title) to default"))
                     .accessibilityValue(format(defaultValue))
-                    .accessibilityIdentifier("appearance.default.\(title)")
+                    .accessibilityIdentifier("appearance.default.\(id)")
                 }.frame(height: 28)
             }.frame(minWidth: 140)
             Text(format(value)).monospacedDigit()
@@ -188,14 +189,14 @@ final class AppearancePreviewView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     func update(_ preferences: Preferences, original: Bool, dark: Bool, image: AppearanceImage? = nil) {
-        let appearanceChanged = self.dark != dark
+        let appearanceChanged = self.dark != dark || self.preferences.language != preferences.language
         self.dark = dark
         self.preferences = preferences
         if appearanceChanged { needsDisplay = true }
         if sample == nil || imageID != image?.id || (image == nil && appearanceChanged) {
             surface.frameView.releaseFrame()
             imageID = image?.id
-            sample = image?.pixels ?? (dark ? AppearanceSample.dark : AppearanceSample.light)
+            sample = image?.pixels ?? AppearanceSample.image(dark: dark, language: preferences.language)
             surface.frameView.layer?.isOpaque = image == nil
             if let sample { surface.frameView.display(sample) }
             needsLayout = true
@@ -293,10 +294,18 @@ final class AppearancePreviewView: NSView {
 
 @MainActor
 enum AppearanceSample {
-    static let light = make(dark: false)
-    static let dark = make(dark: true)
+    static var light: CVPixelBuffer { image(dark: false, language: L10n.language) }
+    static var dark: CVPixelBuffer { image(dark: true, language: L10n.language) }
+    private static var samples: [AppLanguage: [Bool: CVPixelBuffer]] = [:]
 
-    private static func make(dark: Bool) -> CVPixelBuffer {
+    static func image(dark: Bool, language: AppLanguage) -> CVPixelBuffer {
+        if let sample = samples[language]?[dark] { return sample }
+        let sample = make(dark: dark, language: language)
+        samples[language, default: [:]][dark] = sample
+        return sample
+    }
+
+    private static func make(dark: Bool, language: AppLanguage) -> CVPixelBuffer {
         let width = 640, height = 360
         var result: CVPixelBuffer?
         let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
@@ -327,9 +336,9 @@ enum AppearanceSample {
             ])
         }
         text("IceScreen", x: 20, y: 136, size: 17, color: ink, weight: .semibold)
-        text("细节清晰，专注眼前", x: 20, y: 114, size: 12, color: secondary)
+        text(L10n.text("细节清晰，专注眼前", "Clear details. Stay focused.", language: language), x: 20, y: 114, size: 12, color: secondary)
         text("Aa  0123456789", x: 20, y: 84, size: 15, color: ink)
-        text("文字与细线 · 对比锐化效果", x: 20, y: 64, size: 10, color: secondary)
+        text(L10n.text("文字与细线 · 对比锐化效果", "Text and lines · Compare clarity", language: language), x: 20, y: 64, size: 10, color: secondary)
         let colors = [NSColor.systemTeal, NSColor.systemBlue, NSColor.systemPurple]
         NSGradient(colors: colors)!.draw(in: NSBezierPath(roundedRect: NSRect(x: 224, y: 64, width: 76, height: 84),
                                                         xRadius: 12, yRadius: 12), angle: 35)

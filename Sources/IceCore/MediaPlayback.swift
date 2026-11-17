@@ -48,7 +48,23 @@ public struct MediaRequest: Codable, Sendable {
 public struct MediaResponse: Codable, Sendable {
     public var snapshots: [MediaSnapshot]?
     public var error: String?
-    public init(snapshots: [MediaSnapshot]? = nil, error: String? = nil) { self.snapshots = snapshots; self.error = error }
+    public var errorCode: MediaServiceError?
+    public init(snapshots: [MediaSnapshot]? = nil, error: String? = nil, errorCode: MediaServiceError? = nil) {
+        self.snapshots = snapshots; self.error = error; self.errorCode = errorCode
+    }
+}
+
+public enum MediaServiceError: String, Codable, Sendable, LocalizedError {
+    case timeout, sourceEnded, unavailable, invalidRequest
+
+    public var errorDescription: String? {
+        switch self {
+        case .timeout: return L10n.text("系统媒体服务没有响应。", "The system media service did not respond.")
+        case .sourceEnded: return L10n.text("来源媒体已结束，请等待播放状态更新。", "The source media has ended. Wait for playback information to update.")
+        case .unavailable: return L10n.text("当前系统的媒体控制接口不可用。", "The media control interface is unavailable on this system.")
+        case .invalidRequest: return L10n.text("媒体控制请求格式错误。", "The media control request is malformed.")
+        }
+    }
 }
 
 public struct MediaSpaceGesture: Sendable {

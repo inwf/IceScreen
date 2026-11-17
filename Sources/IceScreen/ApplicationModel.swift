@@ -9,25 +9,29 @@ import IceCore
 
 @MainActor
 final class SettingsStore: ObservableObject {
+    private let defaults: UserDefaults
     @Published var value: Preferences {
+        willSet { L10n.language = newValue.language }
         didSet {
-            do { UserDefaults.standard.set(try JSONEncoder().encode(value), forKey: "IceScreen.preferences.v1") }
+            do { defaults.set(try JSONEncoder().encode(value), forKey: "IceScreen.preferences.v1") }
             catch { fatalError("Cannot encode IceScreen settings: \(error)") }
         }
     }
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: "IceScreen.preferences.v1") {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: "IceScreen.preferences.v1") {
             do { value = try JSONDecoder().decode(Preferences.self, from: data); value.normalize() }
             catch { fatalError("Cannot read IceScreen settings: \(error)") }
         } else { value = Preferences() }
-        if !UserDefaults.standard.bool(forKey: "IceScreen.interactionDefaults.v2") {
+        if !defaults.bool(forKey: "IceScreen.interactionDefaults.v2") {
             let previousDefault = Shortcut(keyCode: 49, option: true, control: true, function: false, label: "Space")
             if value.shortcut == previousDefault { value.shortcut = Shortcut() }
-            do { UserDefaults.standard.set(try JSONEncoder().encode(value), forKey: "IceScreen.preferences.v1") }
+            do { defaults.set(try JSONEncoder().encode(value), forKey: "IceScreen.preferences.v1") }
             catch { fatalError("Cannot persist migrated IceScreen settings: \(error)") }
-            UserDefaults.standard.set(true, forKey: "IceScreen.interactionDefaults.v2")
+            defaults.set(true, forKey: "IceScreen.interactionDefaults.v2")
         }
+        L10n.language = value.language
     }
 }
 
@@ -97,7 +101,7 @@ final class ApplicationModel: ObservableObject {
                 return true
             }
             guard self.settings.value.quickLook else { return false }
-            guard !session.stageInactive else { session.showHint("请先返回来源窗口所在的台前调度分组。"); return true }
+            guard !session.stageInactive else { session.showHint(L10n.text("请先返回来源窗口所在的台前调度分组。", "Return to the source window’s Stage Manager group first.")); return true }
             self.preview.press(session)
             return true
         }
@@ -120,6 +124,7 @@ final class ApplicationModel: ObservableObject {
         }
         settingsSubscription = settings.$value.dropFirst().scan((settings.value, settings.value)) { ($0.1, $1) }.sink { [weak self] previous, value in
             guard let self else { return }
+            L10n.language = value.language
             self.hotkeys.shortcut = value.shortcut
             self.hotkeys.regionShortcut = value.effectiveRegionShortcut
             self.hotkeys.closeAllShortcut = value.closeAllShortcut
@@ -282,7 +287,7 @@ final class ApplicationModel: ObservableObject {
                 await catalog.refresh()
                 guard !Task.isCancelled, generation == captureGeneration else { return }
                 guard let updated = catalog.windows.first(where: { $0.windowID == source.windowID }), updated.isOnScreen else {
-                    throw RequestError.message("请先将来源窗口显示到当前桌面，再选择捕获区域。")
+                    throw RequestError.message(L10n.text("请先将来源窗口显示到当前桌面，再选择捕获区域。", "Show the source window on the current desktop before selecting a capture region."))
                 }
                 selector.select(frame: updated.frame) { [weak self] selection in
                     guard let self, let selection, generation == self.captureGeneration else { return }
@@ -316,7 +321,7 @@ final class ApplicationModel: ObservableObject {
         }
         session.onPreview = { [weak self, weak session] in
             guard let self, let session else { return }
-            guard !session.stageInactive else { session.showHint("请先返回来源窗口所在的台前调度分组。"); return }
+            guard !session.stageInactive else { session.showHint(L10n.text("请先返回来源窗口所在的台前调度分组。", "Return to the source window’s Stage Manager group first.")); return }
             self.preview.show(session)
         }
         session.onMedia = { [weak self] in self?.media.send($0) }

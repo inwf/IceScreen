@@ -27,7 +27,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             pointerMoved(to: NSEvent.mouseLocation)
             updateStatus()
             if oldValue != autoHide {
-                hint.show(autoHide ? "自动隐藏已开启" : "自动隐藏已关闭", near: panel.frame)
+                hint.show(autoHide ? L10n.text("自动隐藏已开启", "Auto-hide enabled") : L10n.text("自动隐藏已关闭", "Auto-hide disabled"), near: panel.frame)
             }
         }
     }
@@ -77,10 +77,10 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var bundleID: String { source.owningApplication?.bundleIdentifier ?? appName }
     var status: String {
         if let failure { return failure }
-        if hidden { return "已隐藏 · 60 秒后关闭" }
-        if autoHidden { return "鼠标穿透" }
-        if paused { return "已暂停" }
-        if idle { return "内容暂时没有变化" }
+        if hidden { return L10n.text("已隐藏 · 60 秒后关闭", "Hidden · closes after 60 seconds") }
+        if autoHidden { return L10n.text("鼠标穿透", "Pointer passes through") }
+        if paused { return L10n.text("已暂停", "Paused") }
+        if idle { return L10n.text("内容暂时没有变化", "Content is currently idle") }
         return "\(fps) FPS · \(String(format: "%.1f", viewport.magnification))×"
     }
 
@@ -338,7 +338,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         let menu = NSMenu()
         let current = changeDetection ? changeSeconds : idleSeconds
         for seconds in [2, 5, 10, 20, 30, 60, 120] {
-            let item = NSMenuItem(title: "\(seconds) 秒", action: #selector(chooseThreshold(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.text("\(seconds) 秒", "\(seconds) seconds"), action: #selector(chooseThreshold(_:)), keyEquivalent: "")
             item.target = self; item.tag = seconds
             item.state = current == Double(seconds) ? .on : .off
             menu.addItem(item)
@@ -509,8 +509,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 
     func updateStatus() {
         surface.update(title: title, status: status, idle: idle, detection: idleDetection || changeDetection,
-                       message: failure ?? (stageInactive ? "来源窗口位于台前调度的其他分组\n返回来源窗口后继续捕获" :
-                           (paused || sourcePaused ? "捕获已暂停" : (detectedChangeUntil > 0 ? "检测到新的画面变化" : nil))))
+                       message: failure ?? (stageInactive ? L10n.text("来源窗口位于台前调度的其他分组\n返回来源窗口后继续捕获", "Source is in another Stage Manager group\nReturn to the source to resume capture") :
+                           (paused || sourcePaused ? L10n.text("捕获已暂停", "Capture paused") : (detectedChangeUntil > 0 ? L10n.text("检测到新的画面变化", "New content changes detected") : nil))))
         onChange?()
     }
 
@@ -578,13 +578,13 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 
     func detectionMenu() -> NSMenu {
         let menu = NSMenu()
-        let heading = NSMenuItem(title: "内容检测", action: nil, keyEquivalent: "")
+        let heading = NSMenuItem(title: L10n.text("内容检测", "Content detection"), action: nil, keyEquivalent: "")
         heading.isEnabled = false
         menu.addItem(heading)
         for (title, action, enabled) in [
-            ("空闲提醒 · D", #selector(toggleIdle), idleDetection),
-            ("变化提醒 · C", #selector(toggleChangeDetection), changeDetection),
-            ("细微变化 · S", #selector(toggleSensitiveDetection), sensitiveDetection)
+            (L10n.text("空闲提醒 · D", "Idle notification · D"), #selector(toggleIdle), idleDetection),
+            (L10n.text("变化提醒 · C", "Change notification · C"), #selector(toggleChangeDetection), changeDetection),
+            (L10n.text("细微变化 · S", "Subtle changes · S"), #selector(toggleSensitiveDetection), sensitiveDetection)
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
@@ -602,23 +602,23 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             if let checked { item.state = checked ? .on : .off }
             menu.addItem(item)
         }
-        add("定位来源窗口", #selector(focusSource))
-        if surface.previewEnabled { add("预览来源窗口", #selector(showPreview)) }
-        add(paused ? "继续捕获" : "暂停捕获", #selector(togglePaused))
-        add("恢复完整画面", #selector(resetZoom))
-        let fpsItem = NSMenuItem(title: "应用帧率", action: nil, keyEquivalent: "")
+        add(L10n.text("定位来源窗口", "Focus source window"), #selector(focusSource))
+        if surface.previewEnabled { add(L10n.text("预览来源窗口", "Preview source window"), #selector(showPreview)) }
+        add(paused ? L10n.text("继续捕获", "Resume capture") : L10n.text("暂停捕获", "Pause capture"), #selector(togglePaused))
+        add(L10n.text("恢复完整画面", "Restore full view"), #selector(resetZoom))
+        let fpsItem = NSMenuItem(title: L10n.text("应用帧率", "App frame rate"), action: nil, keyEquivalent: "")
         fpsItem.submenu = frameRateMenu()
         menu.addItem(fpsItem)
         menu.addItem(.separator())
-        add("鼠标移入时自动隐藏", #selector(toggleAutoHide), checked: autoHide)
-        add("悬停时控件周围变暗", #selector(toggleHoverDim), checked: surface.dimOnHover)
-        add("检测内容空闲", #selector(toggleIdle), checked: idleDetection)
-        add("检测画面变化", #selector(toggleChangeDetection), checked: changeDetection)
-        add("检测细微变化", #selector(toggleSensitiveDetection), checked: sensitiveDetection)
-        add("增强对比度和清晰度", #selector(toggleEnhanced), checked: enhanced)
+        add(L10n.text("鼠标移入时自动隐藏", "Auto-hide on hover"), #selector(toggleAutoHide), checked: autoHide)
+        add(L10n.text("悬停时控件周围变暗", "Dim around controls on hover"), #selector(toggleHoverDim), checked: surface.dimOnHover)
+        add(L10n.text("检测内容空闲", "Detect idle content"), #selector(toggleIdle), checked: idleDetection)
+        add(L10n.text("检测画面变化", "Detect content changes"), #selector(toggleChangeDetection), checked: changeDetection)
+        add(L10n.text("检测细微变化", "Detect subtle changes"), #selector(toggleSensitiveDetection), checked: sensitiveDetection)
+        add(L10n.text("增强对比度和清晰度", "Enhance contrast and clarity"), #selector(toggleEnhanced), checked: enhanced)
         menu.addItem(.separator())
-        add(hidden ? "恢复显示" : "暂时隐藏", #selector(toggleHidden))
-        add("关闭浮窗", #selector(close))
+        add(hidden ? L10n.text("恢复显示", "Restore panel") : L10n.text("暂时隐藏", "Hide temporarily"), #selector(toggleHidden))
+        add(L10n.text("关闭浮窗", "Close panel"), #selector(close))
         return menu
     }
 }
@@ -674,6 +674,11 @@ final class PanelSurface: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     func applyAppearance(_ value: Preferences, enhanced: Bool) {
+        if chromeState.value.language != value.language {
+            chromeState.value.language = value.language
+            resizeInput.updateLocalization()
+            updateHint()
+        }
         layer?.cornerRadius = value.cornerRadius
         frameView.layer?.cornerRadius = value.cornerRadius
         dim.layer?.cornerRadius = value.cornerRadius
@@ -729,7 +734,7 @@ final class PanelSurface: NSView {
         input.toolTip = title + " · " + status
         detectionEnabled = detection
         if chromeState.value.idle != idle { chromeState.value.idle = idle }
-        statusMessage = message ?? (idle ? "内容暂时没有变化" : nil)
+        statusMessage = message ?? (idle ? L10n.text("内容暂时没有变化", "Content is currently idle") : nil)
         updateHint()
         needsLayout = true
     }
@@ -743,7 +748,7 @@ final class PanelSurface: NSView {
     private func updateHint() {
         updateControls()
         dim.isHidden = !hovered || !dimOnHover
-        input.toolTip = (clickToFocus ? "单击返回来源 · " : "") + "双击返回并关闭 · 轻按 \(triggerLabel) 隐藏 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭"
+        input.toolTip = (clickToFocus ? L10n.text("单击返回来源 · ", "Click to focus source · ") : "") + L10n.text("双击返回并关闭 · 轻按 \(triggerLabel) 隐藏 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Tap \(triggerLabel) to hide · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close")
         needsLayout = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {

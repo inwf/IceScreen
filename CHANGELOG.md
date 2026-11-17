@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### English
+
+- Added a language setting under General with Simplified Chinese and English. Changes apply immediately and persist across launches.
+- Localized settings, menus, floating-panel controls and hints, notifications, and app error messages. Existing settings retain Chinese by default.
+
+### 中文
+
+- 通用设置增加界面语言选项，支持简体中文和英文，切换后立即生效并在下次启动时保留。
+- 设置页面、菜单、浮窗控件与操作提示、通知及应用错误信息支持双语。已有配置默认保持中文。
+
 ## 1.2.8 — 2026-11-17
 
 ### English

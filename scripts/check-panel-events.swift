@@ -5,6 +5,7 @@ import IceCore
 import ImageIO
 import UniformTypeIdentifiers
 import Darwin
+import Combine
 
 @main
 enum PanelEventChecks {
@@ -57,6 +58,7 @@ enum PanelEventChecks {
         checkCaptureDetection()
         checkPreviewTransition(in: screen.visibleFrame)
         checkAppearancePreview(in: screen.visibleFrame)
+        checkLanguageSettings()
         print("Passed 5 native NSPanel hit-testing checks.")
         try! "passed\n".write(toFile: CommandLine.arguments[2], atomically: true, encoding: .utf8)
     }
@@ -171,6 +173,43 @@ enum PanelEventChecks {
                      "Closing all background panels must release the WindowServer target.")
         assertBackground()
         print("Passed background WindowServer ordering, mouse-through, hiding, AppKit first-click dispatch, and foreground PID preservation checks.")
+    }
+
+    @MainActor private static func checkLanguageSettings() {
+        let previousLanguage = L10n.language
+        let suite = "org.icescreen.tests.language.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            L10n.language = previousLanguage
+        }
+        defaults.set(Data(#"{"panelOpacity":0.73,"autoHideOpacity":0.28}"#.utf8), forKey: "IceScreen.preferences.v1")
+        let store = SettingsStore(defaults: defaults)
+        precondition(store.value.language == .chinese && L10n.language == .chinese)
+        let surface = PanelSurface(frame: CGRect(x: 0, y: 0, width: 320, height: 180))
+        surface.setHovered(true)
+        let chrome = surface.subviews.compactMap { $0 as? PanelChromeHost }.first!
+        let resize = surface.subviews.compactMap { $0 as? PanelResizeHandle }.first!
+        let subscription = store.$value.sink { preferences in
+            precondition(L10n.language == preferences.language, "Published settings must already use the selected language.")
+            surface.applyAppearance(preferences, enhanced: false)
+        }
+        defer { subscription.cancel() }
+        let regions = chrome.state.regions(in: surface.bounds.size).map(\.frame)
+        for language in [AppLanguage.english, .chinese, .english] {
+            store.value.language = language
+            precondition(chrome.state.value.language == language, "Existing panel chrome must update language immediately.")
+            precondition(chrome.state.regions(in: surface.bounds.size).map(\.frame) == regions,
+                         "Language changes must preserve control targeting geometry.")
+            precondition(chrome.state.detectionTitle == (language == .english ? "Disabled" : "未启用"))
+            precondition(resize.toolTip == (language == .english ? "Drag to resize panel" : "拖动调整浮窗大小"))
+            precondition(PanelAction.close.label == (language == .english ? "Close panel" : "关闭浮窗"))
+            precondition(SettingsStore(defaults: defaults).value.language == language, "Language must survive reloading saved preferences.")
+            precondition(store.value.panelOpacity == 0.73 && store.value.autoHideOpacity == 0.28)
+        }
+        precondition(AppearanceSample.image(dark: false, language: .english) !== AppearanceSample.image(dark: false, language: .chinese),
+                     "The built-in preview must retain separate samples for each language.")
+        print("Passed native language persistence, live panel translation, and control geometry checks.")
     }
 
     @MainActor private static func checkAppearancePreview(in screen: NSRect) {

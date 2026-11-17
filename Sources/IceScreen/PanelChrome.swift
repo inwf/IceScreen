@@ -8,16 +8,16 @@ enum PanelAction: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .close: return "关闭浮窗"
-        case .frameRate: return "应用帧率 · F"
-        case .threshold: return "检测等待时间"
-        case .detection: return "内容检测"
-        case .resize: return "拖动调整浮窗大小"
-        case .playPause: return "播放或暂停 · Space"
-        case .previousTrack: return "上一首"
-        case .nextTrack: return "下一首"
-        case .seek: return "播放进度 · ← → 调整 5 秒"
-        case .returnSource: return "返回来源窗口"
+        case .close: return L10n.text("关闭浮窗", "Close panel")
+        case .frameRate: return L10n.text("应用帧率 · F", "App frame rate · F")
+        case .threshold: return L10n.text("检测等待时间", "Detection wait time")
+        case .detection: return L10n.text("内容检测", "Content detection")
+        case .resize: return L10n.text("拖动调整浮窗大小", "Drag to resize panel")
+        case .playPause: return L10n.text("播放或暂停 · Space", "Play or pause · Space")
+        case .previousTrack: return L10n.text("上一首", "Previous track")
+        case .nextTrack: return L10n.text("下一首", "Next track")
+        case .seek: return L10n.text("播放进度 · ← → 调整 5 秒", "Playback progress · ← → seek 5 seconds")
+        case .returnSource: return L10n.text("返回来源窗口", "Return to source")
         }
     }
 }
@@ -30,6 +30,7 @@ struct PanelControlRegion: Identifiable {
 @MainActor
 final class PanelChromeState: ObservableObject {
     struct Value: Equatable {
+        var language = L10n.language
         var hovered = false
         var detection = false
         var changeDetection = false
@@ -50,9 +51,13 @@ final class PanelChromeState: ObservableObject {
     var seek: ((Double) -> Void)?
     var seeking: ((Bool) -> Void)?
 
-    var detectionTitle: String { value.idle ? "已空闲" : (value.detection ? "检测中" : "未启用") }
+    var detectionTitle: String {
+        value.idle ? L10n.text("已空闲", "Idle", language: value.language)
+            : (value.detection ? L10n.text("检测中", "Detecting", language: value.language) : L10n.text("未启用", "Disabled", language: value.language))
+    }
     var detectionHelp: String {
-        "内容检测：" + detectionTitle + "。点击选择空闲提醒、变化提醒或细微变化。"
+        L10n.text("内容检测：\(detectionTitle)。点击选择空闲提醒、变化提醒或细微变化。",
+                  "Content detection: \(detectionTitle). Click to select idle, change, or subtle detection.", language: value.language)
     }
 
     func regions(in size: CGSize) -> [PanelControlRegion] {
@@ -111,6 +116,7 @@ struct PanelChrome: View {
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }
         .environment(\.controlActiveState, .key)
+        .environment(\.locale, state.value.language.locale)
     }
 
     private func controls(in size: CGSize) -> some View {
@@ -127,19 +133,20 @@ struct PanelChrome: View {
         if state.value.hovered && state.value.showHints && state.value.message == nil && state.value.media == nil && size.width >= 210 && size.height >= 110 {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 12) {
-                    hintKey(state.value.clickToFocus ? "单击" : "双击",
-                            state.value.clickToFocus ? "返回来源" : "返回并关闭")
+                    hintKey(state.value.clickToFocus ? L10n.text("单击", "Click") : L10n.text("双击", "Double-click"),
+                            state.value.clickToFocus ? L10n.text("返回来源", "Focus") : L10n.text("返回并关闭", "Focus & close"))
                     if state.value.previewEnabled && size.width >= 300 {
-                        hintKey("Space", "预览")
+                        hintKey("Space", L10n.text("预览", "Preview"))
                     }
                 }
-                Text(state.value.zoomed ? "拖动移动 · ⌘ 双击恢复画面" : "拖动移动 · ⌘ 拖动放大")
+                Text(state.value.zoomed ? L10n.text("拖动移动 · ⌘ 双击恢复画面", "Drag to move · ⌘ double-click to reset") : L10n.text("拖动移动 · ⌘ 拖动放大", "Drag to move · ⌘ drag to zoom"))
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.85))
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.5), radius: 1)
             .lineLimit(1)
+            .minimumScaleFactor(0.65)
             .frame(width: size.width - 66, height: 38, alignment: .leading)
             .position(x: 12 + (size.width - 66) / 2, y: size.height - 30)
         }
@@ -238,7 +245,7 @@ struct PanelChrome: View {
         case .seek:
             EmptyView()
         case .returnSource:
-            Text("返回来源窗口").font(.system(size: 12))
+            Text(L10n.text("返回来源窗口", "Return to source")).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.8)
         }
     }
 }
@@ -262,7 +269,7 @@ private struct MediaSeekControl: View {
                     if !active { seek(value) }
                 }
                 .controlSize(.mini).focusable(false).tint(.white)
-                .accessibilityLabel("播放进度")
+                .accessibilityLabel(L10n.text("播放进度", "Playback progress"))
                 HStack { Text(time(position)); Spacer(); Text(time(duration)) }
                     .font(.system(size: 9, design: .monospaced)).foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.6), radius: 1)

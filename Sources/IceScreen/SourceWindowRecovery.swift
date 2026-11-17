@@ -65,11 +65,11 @@ enum SourceWindowRecovery {
         if destination.size != current.size {
             var size = destination.size
             let status = AXUIElementSetAttributeValue(target, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
-            guard status == .success else { throw RequestError.message("恢复来源窗口尺寸失败（\(status.rawValue)）。") }
+            guard status == .success else { throw RequestError.message(L10n.text("恢复来源窗口尺寸失败（\(status.rawValue)）。", "Unable to restore the source window size (\(status.rawValue)).")) }
         }
         var point = destination.origin
         let status = AXUIElementSetAttributeValue(target, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &point)!)
-        guard status == .success else { throw RequestError.message("恢复来源窗口位置失败（\(status.rawValue)）。") }
+        guard status == .success else { throw RequestError.message(L10n.text("恢复来源窗口位置失败（\(status.rawValue)）。", "Unable to restore the source window position (\(status.rawValue)).")) }
     }
     static func element(pid: pid_t, id: CGWindowID) throws -> AXUIElement {
         let root = AXUIElementCreateApplication(pid)
@@ -78,7 +78,7 @@ enum SourceWindowRecovery {
         guard AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement],
               let target = try windows.first(where: { try WindowActivation.windowID(of: $0) == id }) else {
-            throw RequestError.message("找不到来源窗口的辅助功能对象。")
+            throw RequestError.message(L10n.text("找不到来源窗口的辅助功能对象。", "The source window’s accessibility element was not found."))
         }
         AXUIElementSetMessagingTimeout(target, 0.15)
         return target
@@ -90,7 +90,7 @@ enum SourceWindowRecovery {
               let p, let s, CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID(),
               AXValueGetValue(unsafeBitCast(p, to: AXValue.self), .cgPoint, &point),
               AXValueGetValue(unsafeBitCast(s, to: AXValue.self), .cgSize, &size) else {
-            throw RequestError.message("无法读取来源窗口位置。")
+            throw RequestError.message(L10n.text("无法读取来源窗口位置。", "Unable to read the source window position."))
         }
         return CGRect(origin: point, size: size)
     }

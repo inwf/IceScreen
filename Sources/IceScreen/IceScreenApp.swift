@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var statusItem: NSStatusItem?
     private var errorSubscription: AnyCancellable?
     private var menuVisibilitySubscription: AnyCancellable?
+    private var languageSubscription: AnyCancellable?
 
     init(initialRequest: CaptureRequest?) { self.initialRequest = initialRequest; super.init() }
 
@@ -68,7 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         errorSubscription = model.$error.compactMap { $0 }.sink { [weak self] _ in
             DispatchQueue.main.async { self?.showSettings() }
         }
-        installMenu()
+        languageSubscription = model.settings.$value.map(\.language).removeDuplicates().sink { [weak self] language in
+            L10n.language = language
+            self?.installMenu()
+            self?.settingsWindow?.title = L10n.text("IceScreen 设置", "IceScreen Settings")
+        }
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.image = MenuBarIcon.make()
         status.button?.toolTip = "IceScreen"
@@ -101,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if settingsWindow == nil {
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 820, height: 640),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-            window.title = "IceScreen 设置"
+            window.title = L10n.text("IceScreen 设置", "IceScreen Settings")
             window.backgroundColor = .windowBackgroundColor
             window.toolbarStyle = .unified
             window.contentMinSize = NSSize(width: 740, height: 540)
@@ -125,9 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let capture = NSMenuItem(title: "捕获当前窗口  \(model.settings.value.shortcut.display)", action: #selector(captureCurrent), keyEquivalent: "")
+        let capture = NSMenuItem(title: L10n.text("捕获当前窗口", "Capture current window") + "  \(model.settings.value.shortcut.display)", action: #selector(captureCurrent), keyEquivalent: "")
         capture.target = self; menu.addItem(capture)
-        let region = NSMenuItem(title: "捕获区域  \(model.settings.value.effectiveRegionShortcut?.display ?? "")", action: #selector(captureRegion), keyEquivalent: "")
+        let region = NSMenuItem(title: L10n.text("捕获区域", "Capture region") + "  \(model.settings.value.effectiveRegionShortcut?.display ?? "")", action: #selector(captureRegion), keyEquivalent: "")
         region.target = self; menu.addItem(region)
         if !model.sessions.isEmpty {
             menu.addItem(.separator())
@@ -136,13 +141,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 item.submenu = session.makeMenu()
                 menu.addItem(item)
             }
-            let close = NSMenuItem(title: "关闭全部浮窗", action: #selector(closeAll), keyEquivalent: "")
+            let close = NSMenuItem(title: L10n.text("关闭全部浮窗", "Close all panels"), action: #selector(closeAll), keyEquivalent: "")
             close.target = self; menu.addItem(close)
         }
         menu.addItem(.separator())
-        let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L10n.text("设置…", "Settings…"), action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
-        menu.addItem(withTitle: "退出 IceScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: L10n.text("退出 IceScreen", "Quit IceScreen"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
     @objc private func captureCurrent() { model.captureFocused(region: false) }
@@ -153,23 +158,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let menu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 IceScreen", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        let settings = NSMenuItem(title: "偏好设置…", action: #selector(showSettings), keyEquivalent: ",")
+        appMenu.addItem(withTitle: L10n.text("关于 IceScreen", "About IceScreen"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let settings = NSMenuItem(title: L10n.text("偏好设置…", "Settings…"), action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; appMenu.addItem(settings)
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 IceScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L10n.text("退出 IceScreen", "Quit IceScreen"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu; menu.addItem(appItem)
         let editItem = NSMenuItem()
-        let edit = NSMenu(title: "编辑")
-        for (title, action, key) in [("撤销", "undo:", "z"), ("剪切", "cut:", "x"), ("复制", "copy:", "c"),
-                                      ("粘贴", "paste:", "v"), ("全选", "selectAll:", "a")] {
+        let edit = NSMenu(title: L10n.text("编辑", "Edit"))
+        for (title, action, key) in [(L10n.text("撤销", "Undo"), "undo:", "z"), (L10n.text("剪切", "Cut"), "cut:", "x"), (L10n.text("复制", "Copy"), "copy:", "c"),
+                                      (L10n.text("粘贴", "Paste"), "paste:", "v"), (L10n.text("全选", "Select All"), "selectAll:", "a")] {
             edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
         }
         editItem.submenu = edit; menu.addItem(editItem)
         let windowItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "窗口")
-        windowMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        windowMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        let windowMenu = NSMenu(title: L10n.text("窗口", "Window"))
+        windowMenu.addItem(withTitle: L10n.text("关闭窗口", "Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: L10n.text("最小化", "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowItem.submenu = windowMenu; menu.addItem(windowItem)
         NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = menu

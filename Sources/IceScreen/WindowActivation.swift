@@ -30,11 +30,11 @@ final class WindowActivation {
 
     private init() throws {
         guard let library = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY | RTLD_LOCAL) else {
-            throw RequestError.message("无法加载系统窗口定位接口。")
+            throw RequestError.message(L10n.text("无法加载系统窗口定位接口。", "Unable to load the system window focus interface."))
         }
         guard let processImage = dlopen(nil, RTLD_LAZY) else {
             dlclose(library)
-            throw RequestError.message("无法读取系统进程接口。")
+            throw RequestError.message(L10n.text("无法读取系统进程接口。", "Unable to load the system process interface."))
         }
         defer { dlclose(processImage) }
         guard let front = dlsym(library, "_SLPSSetFrontProcessWithOptions"),
@@ -45,7 +45,7 @@ final class WindowActivation {
               let spaces = dlsym(library, "SLSCopySpacesForWindows"),
               let displays = dlsym(library, "SLSCopyManagedDisplaySpaces") else {
             dlclose(library)
-            throw RequestError.message("当前系统缺少窗口定位接口。")
+            throw RequestError.message(L10n.text("当前系统缺少窗口定位接口。", "The window focus interface is unavailable on this system."))
         }
         self.library = library
         setFrontProcess = unsafeBitCast(front, to: SetFrontProcess.self)
@@ -63,7 +63,7 @@ final class WindowActivation {
         let connection = try connection.get()
         var identifier: CGWindowID = 0
         let status = connection.getWindowID(element, &identifier)
-        if status == .cannotComplete { throw SourceFocusPending(operation: "读取来源窗口标识") }
+        if status == .cannotComplete { throw SourceFocusPending(operation: L10n.text("读取来源窗口标识", "Read source window ID")) }
         guard status == .success, identifier != 0 else { return nil }
         return identifier
     }
@@ -72,9 +72,9 @@ final class WindowActivation {
         let connection = try connection.get()
         var process = ProcessSerialNumber()
         let lookup = connection.getProcess(processID, &process)
-        guard lookup == noErr else { throw RequestError.message("无法取得来源进程（\(lookup)）。") }
+        guard lookup == noErr else { throw RequestError.message(L10n.text("无法取得来源进程（\(lookup)）。", "Unable to find the source process (\(lookup)).")) }
         let result = connection.setFrontProcess(&process, windowID, 0x200)
-        guard result == noErr else { throw RequestError.message("系统无法置前来源窗口（\(result)）。") }
+        guard result == noErr else { throw RequestError.message(L10n.text("系统无法置前来源窗口（\(result)）。", "The system could not bring the source window forward (\(result)).")) }
 
         // WindowServer 的窗口焦点事件，窗口 ID 使用网络字节序。
         var record = [UInt8](repeating: 0, count: 0xf8)
@@ -84,7 +84,7 @@ final class WindowActivation {
         var identifier = windowID.bigEndian
         withUnsafeBytes(of: &identifier) { record.replaceSubrange(0x3c..<0x40, with: $0) }
         let posted = record.withUnsafeBytes { connection.postFocusEvent(&process, $0.baseAddress!) }
-        guard posted == noErr else { throw RequestError.message("系统无法交付来源窗口焦点（\(posted)）。") }
+        guard posted == noErr else { throw RequestError.message(L10n.text("系统无法交付来源窗口焦点（\(posted)）。", "The system could not focus the source window (\(posted)).")) }
     }
 
     static func spaceIDs(for windowID: CGWindowID) throws -> [UInt64] {
@@ -92,7 +92,7 @@ final class WindowActivation {
         let windows = [NSNumber(value: windowID)] as CFArray
         guard let value = connection.copyWindowSpaces(connection.mainConnection(), 0x7, windows)?.takeRetainedValue(),
               let spaces = value as? [NSNumber] else {
-            throw RequestError.message("无法读取来源窗口所在桌面。")
+            throw RequestError.message(L10n.text("无法读取来源窗口所在桌面。", "Unable to read the source window’s Space."))
         }
         return spaces.map(\.uint64Value)
     }
@@ -101,12 +101,12 @@ final class WindowActivation {
         let connection = try connection.get()
         guard let value = connection.copyDisplaySpaces(connection.mainConnection())?.takeRetainedValue(),
               let displays = value as? [[String: Any]], !displays.isEmpty else {
-            throw RequestError.message("无法读取当前显示器的桌面状态。")
+            throw RequestError.message(L10n.text("无法读取当前显示器的桌面状态。", "Unable to read the current display’s Space state."))
         }
         return try displays.map { display in
             guard let space = display["Current Space"] as? [String: Any],
                   let identifier = space["id64"] as? NSNumber else {
-                throw RequestError.message("系统返回的当前桌面状态不完整。")
+                throw RequestError.message(L10n.text("系统返回的当前桌面状态不完整。", "The system returned incomplete current Space information."))
             }
             return identifier.uint64Value
         }

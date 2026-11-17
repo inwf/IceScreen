@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import IceCore
 
 @MainActor
 final class MediaSeekAutomation {
@@ -55,7 +56,7 @@ final class MediaSeekAutomation {
             guard !Task.isCancelled else { return }
             if process.terminationStatus != 0 {
                 pending[bundle] = nil
-                onError?("无法调整来源进度，请检查系统设置中的自动化权限。\n" + message.trimmingCharacters(in: .whitespacesAndNewlines))
+                onError?(L10n.text("无法调整来源进度，请检查系统设置中的自动化权限。\n", "Unable to seek in the source. Check Automation permission in System Settings.\n") + message.trimmingCharacters(in: .whitespacesAndNewlines))
             } else { onComplete?() }
         } catch { if !Task.isCancelled { onError?(error.localizedDescription) } }
     }

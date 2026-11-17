@@ -72,6 +72,7 @@ public enum ShortcutAction: Sendable { case capture, region, closeAll }
 
 public struct Preferences: Codable, Equatable, Sendable {
     public static let frameRates = [1, 5, 10, 15, 24, 30, 60]
+    public var language: AppLanguage = .chinese
     public var multiWindow = false
     public var defaultFPS = 10
     public var appFrameRates: [String: Int] = [:]
@@ -123,16 +124,17 @@ public struct Preferences: Codable, Equatable, Sendable {
         case .closeAll: proposed.closeAllShortcut = candidate
         }
         if let region = proposed.effectiveRegionShortcut, proposed.shortcut.usesSameKeys(as: region) {
-            return "窗口捕获与区域捕获需要使用不同的快捷键。"
+            return L10n.text("窗口捕获与区域捕获需要使用不同的快捷键。", "Window and region capture must use different shortcuts.")
         }
         if let close = proposed.closeAllShortcut,
            proposed.shortcut.usesSameKeys(as: close) || proposed.effectiveRegionShortcut?.usesSameKeys(as: close) == true {
-            return "关闭全部浮窗的快捷键与捕获快捷键冲突。"
+            return L10n.text("关闭全部浮窗的快捷键与捕获快捷键冲突。", "The close-all shortcut conflicts with a capture shortcut.")
         }
         return nil
     }
 
     private enum CodingKeys: String, CodingKey {
+        case language
         case multiWindow, defaultFPS, appFrameRates, preferredWidth, autoHide, enhanceContrast, idleDetection, idleSeconds, shortcut
         case regionShortcut, closeAllShortcut, clickToFocus, sourceFocusBehavior, showOnFullscreenSpaces
         case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickCaptureModifiers, quickLook
@@ -146,6 +148,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? language
         multiWindow = try c.decodeIfPresent(Bool.self, forKey: .multiWindow) ?? multiWindow
         defaultFPS = try c.decodeIfPresent(Int.self, forKey: .defaultFPS) ?? defaultFPS
         appFrameRates = try c.decodeIfPresent([String: Int].self, forKey: .appFrameRates) ?? appFrameRates

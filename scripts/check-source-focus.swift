@@ -6,6 +6,17 @@ import Darwin
 
 @main
 enum SourceFocusChecks {
+    @MainActor private final class FixtureWindows: NSObject, NSWindowDelegate {
+        var windows: [NSWindow] = []
+
+        func windowWillClose(_ notification: Notification) {
+            guard let window = notification.object as? NSWindow else {
+                preconditionFailure("Window close notification must identify its window.")
+            }
+            windows.removeAll { $0 === window }
+        }
+    }
+
     @MainActor static func main() {
         setbuf(stdout, nil)
         let app = NSApplication.shared
@@ -13,11 +24,14 @@ enum SourceFocusChecks {
         if arguments.first == "--fixture" {
             app.setActivationPolicy(.regular)
             app.finishLaunching()
-            let windows = (1...2).map { index -> NSWindow in
+            let fixture = FixtureWindows()
+            for index in 1...2 {
                 let window = NSWindow(contentRect: NSRect(x: 160 + index * 60, y: 180, width: 420, height: 280),
                                       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
                 window.title = "IceScreen focus check \(index)"
                 window.isReleasedWhenClosed = false
+                window.delegate = fixture
+                fixture.windows.append(window)
                 window.collectionBehavior = [.fullScreenPrimary]
                 let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 280))
                 text.string = "IceScreen source focus document \(index)"
@@ -25,9 +39,8 @@ enum SourceFocusChecks {
                 window.contentView = text
                 window.makeFirstResponder(text)
                 window.makeKeyAndOrderFront(nil)
-                return window
             }
-            withExtendedLifetime(windows) { app.run() }
+            withExtendedLifetime(fixture) { app.run() }
             return
         }
         precondition(arguments.count == 4 && ["terminal", "interactions"].contains(arguments[3]),

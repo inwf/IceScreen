@@ -1,18 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.2.8 — 2026-11-17
 
 ### English
 
 - Added an auto-hide opacity slider in Appearance settings, including for panels toggled by double-tapping the trigger modifier. Visible panels continue updating while allowing clicks through; leaving restores normal opacity.
 - Fixed reversed content zoom direction when holding Command and scrolling over a floating panel.
 - Added native checks for pixel and line scroll events, covering zoom direction, ordinary panning, panel geometry, and foreground focus.
+- Updated checkout, artifact upload/download, and uv setup actions to versions using Node.js 24.
 
 ### 中文
 
 - 外观设置增加自动隐藏透明度调节，也适用于双击触发修饰键开启自动隐藏的浮窗。保留可见画面时继续更新并允许鼠标穿透，移出后恢复正常透明度。
 - 修复按住 Command 并在浮窗上滚动时，内容缩放方向相反的问题。
 - 增加像素滚动和行滚动事件的原生检查，覆盖缩放方向、普通平移、浮窗尺寸与位置以及前台焦点。
+- 更新代码检出、构建产物上传与下载及 uv 安装 Action，使用 Node.js 24 运行时。
 
 ## 1.2.7 — 2026-11-17
 

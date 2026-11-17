@@ -44,8 +44,8 @@ bash scripts/package-dmg.sh
 发布一个新版本时，先更新 `Sources/IceScreen/Resources/Info.plist` 和 `CHANGELOG.md`，提交到 `main` 并确认主分支检查通过，再创建并推送对应标签：
 
 ```bash
-git tag v1.2.7
-git push origin v1.2.7
+git tag v1.2.8
+git push origin v1.2.8
 ```
 
 应用图标原图为 `assets/AppIcon.png`。`scripts/make-icon.swift` 从原图生成 16–1024 像素的标准及 Retina 图标，供 Finder、程序坞、关于界面和 DMG 卷图标共用。菜单栏采用独立的冰淇淋轮廓模板图标，由系统适配深浅色。

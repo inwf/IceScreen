@@ -71,10 +71,11 @@ public struct PanelVisibility: Equatable, Sendable {
     public var systemSleeping = false
     public var displaySleeping = false
     public var interacting = false
+    public var autoHideOpacity: Double = 0
 
     public init() {}
     public var shouldCapture: Bool {
-        !manuallyHidden && !automaticallyHidden && !paused && !systemSleeping && !displaySleeping
+        !manuallyHidden && (!automaticallyHidden || autoHideOpacity > 0) && !paused && !systemSleeping && !displaySleeping
     }
 
     public mutating func toggleManual(at time: TimeInterval) {

@@ -270,7 +270,13 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         surface.previewEnabled = value.quickLook
         surface.applyAppearance(value, enhanced: enhanced)
         panelOpacity = value.panelOpacity
-        if !autoHidden { panel.alphaValue = panelOpacity }
+        let autoHideOpacityChanged = visibility.autoHideOpacity != value.autoHideOpacity
+        visibility.autoHideOpacity = value.autoHideOpacity
+        if autoHidden {
+            if autoHideOpacityChanged { applyAutoHidden(animated: false) }
+        } else {
+            panel.alphaValue = panelOpacity
+        }
         triggerLabel = value.triggerModifier.display
         surface.triggerLabel = triggerLabel
         panel.collectionBehavior = value.showOnFullscreenSpaces ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary] : [.canJoinAllSpaces, .stationary]
@@ -417,20 +423,21 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         if previous != autoHidden { applyAutoHidden() }
     }
 
-    private func applyAutoHidden() {
+    private func applyAutoHidden(animated: Bool = true) {
         let value = autoHidden
+        let opacity = value ? visibility.autoHideOpacity : panelOpacity
         panel.ignoresMouseEvents = value
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            panel.animator().alphaValue = value ? 0 : panelOpacity
+            context.duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0
+            panel.animator().alphaValue = opacity
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, !self.autoHidden, !self.closed else { return }
+                guard let self, self.panel.alphaValue > 0, !self.closed else { return }
                 self.surface.frameView.redraw()
             }
         }
         syncRunning()
-        if value { surface.frameView.releaseFrame() }
+        if value && opacity == 0 { surface.frameView.releaseFrame() }
         updateStatus()
     }
 

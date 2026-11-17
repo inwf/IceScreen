@@ -108,6 +108,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var dimOnHover = true
     public var hoverBlur: Double = 1
     public var panelOpacity: Double = 1
+    public var autoHideOpacity: Double = 0
     public var showMenuBarIcon = true
 
     public var effectiveRegionShortcut: Shortcut? { regionShortcut ?? shortcut.regionVariant }
@@ -136,7 +137,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         case regionShortcut, closeAllShortcut, clickToFocus, sourceFocusBehavior, showOnFullscreenSpaces
         case quickRegionCapture, cornerRadius, showHoverHints, panelPosition, triggerModifier, quickCaptureModifiers, quickLook
         case changeDetection, changeSeconds, sensitiveDetection, detectionNotifications, detectionCommand, detectionCommandTimeout
-        case dimOnHover, hoverBlur, panelOpacity, showMenuBarIcon
+        case dimOnHover, hoverBlur, panelOpacity, autoHideOpacity, showMenuBarIcon
         case contrastStrength, sharpnessStrength
         case smartRegionCapture
         case mediaControls, mediaSeek, mediaSpace
@@ -182,6 +183,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         dimOnHover = try c.decodeIfPresent(Bool.self, forKey: .dimOnHover) ?? dimOnHover
         hoverBlur = try c.decodeIfPresent(Double.self, forKey: .hoverBlur) ?? hoverBlur
         panelOpacity = try c.decodeIfPresent(Double.self, forKey: .panelOpacity) ?? panelOpacity
+        autoHideOpacity = try c.decodeIfPresent(Double.self, forKey: .autoHideOpacity) ?? autoHideOpacity
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? showMenuBarIcon
     }
 
@@ -202,6 +204,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         contrastStrength = contrastStrength.isFinite ? min(1, max(0, contrastStrength)) : 0.5
         sharpnessStrength = sharpnessStrength.isFinite ? min(1, max(0, sharpnessStrength)) : 0.5
         panelOpacity = panelOpacity.isFinite ? min(1, max(0.35, panelOpacity)) : 1
+        autoHideOpacity = autoHideOpacity.isFinite ? min(1, max(0, autoHideOpacity)) : 0
         cornerRadius = cornerRadius.isFinite ? min(30, max(0, cornerRadius)) : 14
     }
 }

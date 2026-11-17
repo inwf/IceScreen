@@ -80,4 +80,24 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(edited.contrastStrength, 0)
         XCTAssertEqual(edited.sharpnessStrength, 0)
     }
+
+    func testAutoHideOpacityMigratesPersistsAndNormalizes() throws {
+        let data = Data(#"{"autoHide":true,"panelOpacity":0.73}"#.utf8)
+        var preferences = try JSONDecoder().decode(Preferences.self, from: data)
+        XCTAssertTrue(preferences.autoHide)
+        XCTAssertEqual(preferences.autoHideOpacity, 0)
+        XCTAssertEqual(preferences.panelOpacity, 0.73)
+        for value in [0.0, 0.28, 1.0] {
+            preferences.autoHideOpacity = value
+            preferences.normalize()
+            let restored = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences))
+            XCTAssertEqual(restored.autoHideOpacity, value)
+            XCTAssertEqual(restored.panelOpacity, 0.73)
+        }
+        for (value, expected) in [(-1.0, 0.0), (2.0, 1.0), (Double.nan, 0.0), (Double.infinity, 0.0)] {
+            preferences.autoHideOpacity = value
+            preferences.normalize()
+            XCTAssertEqual(preferences.autoHideOpacity, expected)
+        }
+    }
 }

@@ -166,6 +166,7 @@ enum SourceFocusChecks {
         session.resetZoom()
 
         try checkScrollZoom(session, foreground: otherApp)
+        try await checkAutoHideOpacity(session, preferences: preferences, foreground: otherApp)
 
         try click(session, point: NSPoint(x: 24, y: session.surface.bounds.height - 24))
         print("Checking captured fixture return: PID=\(sourceApp.processIdentifier), window=\(source.windowID).")
@@ -559,6 +560,70 @@ enum SourceFocusChecks {
     @MainActor private static func isOnScreen(_ id: CGWindowID) -> Bool {
         let entries = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         return entries.first { ($0[kCGWindowNumber as String] as? CGWindowID) == id }?[kCGWindowIsOnscreen as String] as? Bool == true
+    }
+
+    @MainActor private static func checkAutoHideOpacity(_ session: CaptureSession, preferences: Preferences,
+                                                      foreground: NSRunningApplication) async throws {
+        NativeFocusDiagnostics.step("background_auto_hide_opacity")
+        var appearance = preferences
+        appearance.panelOpacity = 0.7
+        appearance.autoHideOpacity = 0.28
+        session.applyPreferences(appearance)
+        let inside = CGPoint(x: session.panel.frame.midX, y: session.panel.frame.midY)
+        let outside = CGPoint(x: session.panel.frame.minX - 20, y: session.panel.frame.minY - 20)
+        let originalFrame = session.panel.frame
+        defer {
+            session.surface.frameView.onFirstFrameRendered = nil
+            if session.paused { session.togglePaused() }
+            session.autoHide = false
+            session.applyPreferences(preferences)
+        }
+        func verify(_ opacity: Double, hidden: Bool) throws {
+            try require(session.autoHidden == hidden && session.panel.ignoresMouseEvents == hidden,
+                        "Auto-hide must retain mouse-through behavior at every opacity.")
+            try require(abs(session.panel.alphaValue - opacity) < 0.001 && session.panel.frame == originalFrame,
+                        "Auto-hide opacity must preserve panel size and position.")
+            try require(!NSApp.isActive && !session.panel.isKeyWindow
+                        && NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier,
+                        "Auto-hide appearance changes must preserve foreground focus.")
+        }
+        var rendered = false
+        session.surface.frameView.onFirstFrameRendered = { rendered = true }
+        // 使用双击触发修饰键调用的同一个会话动作。
+        session.toggleAutoHide()
+        session.pointerMoved(to: inside)
+        try await wait("confirm_translucent_auto_hide") { rendered && abs(session.panel.alphaValue - 0.28) < 0.001 }
+        try verify(0.28, hidden: true)
+
+        appearance.panelOpacity = 0.6
+        session.applyPreferences(appearance)
+        try verify(0.28, hidden: true)
+        appearance.autoHideOpacity = 0
+        session.applyPreferences(appearance)
+        try await wait("confirm_invisible_auto_hide") { session.panel.alphaValue == 0 }
+        try verify(0, hidden: true)
+
+        rendered = false
+        session.surface.frameView.onFirstFrameRendered = { rendered = true }
+        appearance.autoHideOpacity = 0.42
+        session.applyPreferences(appearance)
+        try await wait("confirm_capture_after_opacity_change") { rendered && abs(session.panel.alphaValue - 0.42) < 0.001 }
+        try verify(0.42, hidden: true)
+        session.togglePaused()
+        appearance.autoHideOpacity = 1
+        session.applyPreferences(appearance)
+        try await wait("confirm_opaque_auto_hide") { session.panel.alphaValue == 1 }
+        try require(session.paused, "Changing auto-hide opacity must preserve an explicit pause.")
+        try verify(1, hidden: true)
+        session.pointerMoved(to: outside)
+        try await wait("confirm_opacity_after_pointer_exit") { abs(session.panel.alphaValue - 0.6) < 0.001 }
+        try verify(0.6, hidden: false)
+        session.togglePaused()
+        session.pointerMoved(to: inside)
+        session.toggleAutoHide()
+        try await wait("confirm_opacity_after_auto_hide_disabled") { abs(session.panel.alphaValue - 0.6) < 0.001 }
+        try verify(0.6, hidden: false)
+        print("Passed native auto-hide opacity, live rendering, preference updates, pointer exit, and mouse-through checks.")
     }
 
     @MainActor private static func checkScrollZoom(_ session: CaptureSession, foreground: NSRunningApplication) throws {

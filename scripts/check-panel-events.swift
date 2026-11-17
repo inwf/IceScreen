@@ -226,6 +226,13 @@ enum PanelEventChecks {
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         precondition(preview.surface.alphaValue == 0, "Auto-hide must hide the entire sample under the pointer.")
         precondition(!preview.trackingAreas.isEmpty, "The stationary parent must retain hover tracking while the sample is invisible.")
+        for opacity in [0.28, 1.0, 0.0, 0.15] {
+            preferences.autoHideOpacity = opacity
+            preview.update(preferences, original: false, dark: false)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            precondition(abs(preview.surface.alphaValue - opacity) < 0.001,
+                         "Changing auto-hide opacity must immediately update the hovered preview.")
+        }
         hover(false)
         precondition(abs(preview.surface.alphaValue - 0.4) < 0.001, "Pointer exit must restore the selected opacity.")
         preferences.autoHide = false

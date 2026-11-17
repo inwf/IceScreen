@@ -33,7 +33,7 @@ struct AppearanceSettings: View {
                     .accessibilityValue("圆角 \(Int(store.value.cornerRadius)) 点，透明度 \(Int(store.value.panelOpacity * 100))%，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")")
                 Text(showOriginal ? "正在对比原始画面 · 圆角和透明度仍按当前设置显示" : (images.image?.name ?? "内置文字与图形示例"))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Text(store.value.autoHide ? "鼠标移入画面预览自动隐藏，移出后恢复。" : "鼠标移入画面预览按钮、边缘阴影和操作提示。")
+                Text(store.value.autoHide ? "鼠标移入后按隐藏时透明度显示，移出后恢复。" : "鼠标移入画面预览按钮、边缘阴影和操作提示。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 12)
@@ -62,6 +62,13 @@ struct AppearanceSettings: View {
                 }
                 Section {
                     Toggle("鼠标移入时自动隐藏", isOn: $store.value.autoHide)
+                    DefaultValueSlider(title: "隐藏时透明度", value: $store.value.autoHideOpacity,
+                                       range: 0...1, step: 0.01, defaultValue: defaults.autoHideOpacity,
+                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                } header: { Text("自动隐藏") } footer: {
+                    Text("0% 完全透明，100% 完全不透明。鼠标移入后保持穿透，移出后恢复正常透明度。双击 \(store.value.triggerModifier.display) 开启自动隐藏的浮窗也使用此设置。")
+                }
+                Section {
                     Toggle("悬停时控件周围变暗", isOn: $store.value.dimOnHover)
                     DefaultValueSlider(title: "边缘效果强度", value: $store.value.hoverBlur,
                                        range: 0...1, step: 0.01, defaultValue: defaults.hoverBlur,
@@ -241,7 +248,7 @@ final class AppearancePreviewView: NSView {
 
     private func applyHover(animated: Bool) {
         surface.setHovered(pointerInside)
-        let opacity = pointerInside && preferences.autoHide ? 0 : preferences.panelOpacity
+        let opacity = pointerInside && preferences.autoHide ? preferences.autoHideOpacity : preferences.panelOpacity
         guard surface.alphaValue != opacity else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0

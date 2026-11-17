@@ -175,6 +175,32 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(state.isExpired(at: 100))
     }
 
+    func testVisibleAutoHideKeepsCaptureAndHonorsPauseAndSleep() {
+        var state = PanelVisibility()
+        state.autoHideOpacity = 0.28
+        state.updatePointer(inside: true, autoHide: true)
+        XCTAssertTrue(state.automaticallyHidden)
+        XCTAssertTrue(state.shouldCapture)
+        state.autoHideOpacity = 0
+        XCTAssertFalse(state.shouldCapture)
+        state.autoHideOpacity = 1
+        XCTAssertTrue(state.shouldCapture)
+        state.paused = true
+        XCTAssertFalse(state.shouldCapture)
+        state.paused = false
+        state.systemSleeping = true
+        XCTAssertFalse(state.shouldCapture)
+        state.systemSleeping = false
+        state.displaySleeping = true
+        XCTAssertFalse(state.shouldCapture)
+        state.displaySleeping = false
+        XCTAssertTrue(state.shouldCapture)
+        state.toggleManual(at: 10)
+        XCTAssertFalse(state.shouldCapture)
+        state.toggleManual(at: 20)
+        XCTAssertTrue(state.shouldCapture)
+    }
+
     func testLeavingDoesNotResumeExplicitlyPausedCapture() {
         var state = PanelVisibility()
         state.paused = true

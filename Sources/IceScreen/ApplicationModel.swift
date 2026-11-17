@@ -37,7 +37,7 @@ final class SettingsStore: ObservableObject {
 
 @MainActor
 final class ApplicationModel: ObservableObject {
-    let settings = SettingsStore()
+    let settings: SettingsStore
     let catalog = WindowCatalog()
     let hotkeys = HotkeyMonitor()
     private let magnification = PanelMagnificationRouter()
@@ -63,7 +63,8 @@ final class ApplicationModel: ObservableObject {
     private var captureTasks: [UUID: Task<Void, Never>] = [:]
     private var selectionTask: Task<Void, Never>?
 
-    init() {
+    init(settings store: SettingsStore? = nil) {
+        self.settings = store ?? SettingsStore()
         lastExternalPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         hotkeys.shortcut = settings.value.shortcut
         hotkeys.regionShortcut = settings.value.effectiveRegionShortcut

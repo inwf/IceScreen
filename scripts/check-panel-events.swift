@@ -59,6 +59,7 @@ enum PanelEventChecks {
         checkPreviewTransition(in: screen.visibleFrame)
         checkAppearancePreview(in: screen.visibleFrame)
         checkLanguageSettings()
+        checkSettingsResourceLifetime()
         print("Passed 5 native NSPanel hit-testing checks.")
         try! "passed\n".write(toFile: CommandLine.arguments[2], atomically: true, encoding: .utf8)
     }
@@ -79,9 +80,9 @@ enum PanelEventChecks {
 
     @MainActor private static func wait(_ message: String, until condition: () -> Bool) {
         let deadline = Date().addingTimeInterval(10)
-        while !condition() {
+        while !autoreleasepool(invoking: condition) {
             precondition(Date() < deadline, message)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            autoreleasepool { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         }
     }
 
@@ -280,6 +281,89 @@ enum PanelEventChecks {
         print("Passed native language persistence, live panel translation, and control geometry checks.")
     }
 
+    @MainActor private static func checkSettingsResourceLifetime() {
+        let previousLanguage = L10n.language
+        let suite = "org.icescreen.tests.settings-lifetime.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = SettingsStore(defaults: defaults)
+        store.value.language = .english
+        store.value.autoHideOpacity = 0.27
+        store.value.shortcut = Shortcut(keyCode: 12, option: true, control: true, function: false, label: "Q")
+        let model = ApplicationModel(settings: store)
+        let controller = SettingsWindowController(model: model, releaseDelay: .milliseconds(300))
+        defer {
+            controller.window?.close()
+            model.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+            L10n.language = previousLanguage
+        }
+        controller.state.selection = .appearance
+        controller.state.showOriginal = true
+        let monitor = model.hotkeys
+        let hotkeysActive = model.hotkeysActive
+        let expectedPreferences = store.value
+        var frame = NSRect.zero
+        weak var originalWindow: NSWindow?
+        weak var originalHost: NSViewController?
+        weak var originalPreview: AppearancePreviewView?
+        func preview(in view: NSView?) -> AppearancePreviewView? {
+            if let result = view as? AppearancePreviewView { return result }
+            for child in view?.subviews ?? [] {
+                if let result = preview(in: child) { return result }
+            }
+            return nil
+        }
+        autoreleasepool {
+            controller.show()
+            frame = controller.window!.frame.offsetBy(dx: 12, dy: -12)
+            controller.window!.setFrame(frame, display: true)
+            originalWindow = controller.window
+            originalHost = controller.window?.contentViewController
+            wait("Settings must construct the actual appearance preview.") { preview(in: controller.window?.contentView) != nil }
+            originalPreview = preview(in: controller.window?.contentView)
+            controller.window!.close()
+            controller.show()
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        precondition(controller.window === originalWindow && controller.window!.isVisible,
+                     "Reopening must cancel cleanup and reuse the settings window.")
+        autoreleasepool { controller.window!.close() }
+        wait("Closed settings must release their window, hosting controller, and preview.") {
+            controller.window == nil && originalWindow == nil && originalHost == nil && originalPreview == nil
+        }
+        precondition(model.hotkeys === monitor && model.hotkeysActive == hotkeysActive,
+                     "Releasing settings must preserve the shortcut monitor.")
+        precondition(model.hotkeys.shortcut == expectedPreferences.shortcut && !model.hotkeys.recording)
+        precondition(SettingsStore(defaults: defaults).value == expectedPreferences,
+                     "Releasing settings must preserve every saved preference.")
+        controller.show()
+        precondition(controller.window!.frame == frame, "Rebuilt settings must restore window geometry.")
+        precondition(controller.state.selection == .appearance && controller.state.showOriginal,
+                     "Rebuilt settings must restore the selected page and comparison mode.")
+        precondition(controller.window!.title == "IceScreen Settings")
+        for language in [AppLanguage.chinese, .english] {
+            store.value.language = language
+            controller.updateTitle()
+            precondition(controller.window!.title == (language == .english ? "IceScreen Settings" : "IceScreen 设置"))
+            precondition(model.hotkeys.shortcut == expectedPreferences.shortcut)
+        }
+        let retainedSample = AppearanceSample.image(dark: false, language: .english)
+        AppearanceSample.clearCache()
+        precondition(AppearanceSample.image(dark: false, language: .english) !== retainedSample,
+                     "Clearing sample caches must create new buffers on demand.")
+        let panel = makePanel(CGRect(x: frame.minX, y: frame.minY, width: 320, height: 180))
+        let liveView = FrameView(frame: CGRect(x: 0, y: 0, width: 320, height: 180))
+        panel.contentView = liveView
+        panel.orderFrontRegardless()
+        var rendered = false
+        liveView.onFirstFrameRendered = { rendered = true }
+        liveView.display(retainedSample)
+        wait("A retained frame must still render after settings cache cleanup.") { rendered }
+        liveView.releaseFrame()
+        panel.close()
+        print("Passed native settings release, reopen cancellation, window and preview disposal, state restoration, shortcut persistence, bilingual titles, and shared rendering checks.")
+    }
+
     @MainActor private static func checkAppearancePreview(in screen: NSRect) {
         let window = NSWindow(contentRect: NSRect(x: screen.midX - 220, y: screen.midY - 110, width: 440, height: 220),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -415,6 +499,23 @@ enum PanelEventChecks {
                 _ = try AppearanceImage.load(from: invalid)
                 fatalError("Unreadable images must return an actionable error.")
             } catch AppearanceImage.ImageError.unreadable {}
+            let images = AppearanceImageStore()
+            images.load(png)
+            wait("The imported preview must finish decoding.") { !images.isLoading }
+            precondition(images.error == nil && images.image != nil && images.hasSelection)
+            let originalID = images.image!.id
+            images.releaseDecodedImage()
+            precondition(images.image == nil && images.hasSelection, "Cache cleanup must preserve the selected file reference.")
+            images.restoreIfNeeded()
+            wait("The selected preview must decode again after cleanup.") { !images.isLoading }
+            precondition(images.error == nil && images.image?.id != originalID && images.image != nil)
+            precondition(CVPixelBufferGetWidth(images.image!.pixels) == 1024)
+            images.releaseDecodedImage()
+            images.restoreIfNeeded()
+            images.reset()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            precondition(images.image == nil && !images.hasSelection && !images.isLoading,
+                         "A cancelled restore must not repopulate a reset preview.")
         } catch { fatalError("Appearance import check failed: \(error)") }
     }
 

@@ -51,10 +51,10 @@ enum IceScreenApp {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let initialRequest: CaptureRequest?
     private var model: ApplicationModel!
-    private var settingsWindow: NSWindow?
+    private var settingsController: SettingsWindowController!
     private var statusItem: NSStatusItem?
     private var errorSubscription: AnyCancellable?
     private var menuVisibilitySubscription: AnyCancellable?
@@ -66,13 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         ApplicationIdentity.prepare()
         SourceWindowRecovery.recoverAbandoned()
         model = ApplicationModel()
+        settingsController = SettingsWindowController(model: model)
         errorSubscription = model.$error.compactMap { $0 }.sink { [weak self] _ in
             DispatchQueue.main.async { self?.showSettings() }
         }
         languageSubscription = model.settings.$value.map(\.language).removeDuplicates().sink { [weak self] language in
             L10n.language = language
             self?.installMenu()
-            self?.settingsWindow?.title = L10n.text("IceScreen 设置", "IceScreen Settings")
+            self?.settingsController.updateTitle()
         }
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.image = MenuBarIcon.make()
@@ -102,30 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc func showSettings() {
-        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
-        if settingsWindow == nil {
-            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 820, height: 640),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-            window.title = L10n.text("IceScreen 设置", "IceScreen Settings")
-            window.backgroundColor = .windowBackgroundColor
-            window.toolbarStyle = .unified
-            window.contentMinSize = NSSize(width: 740, height: 540)
-            window.isReleasedWhenClosed = false
-            window.delegate = self
-            window.contentViewController = NSHostingController(rootView: SettingsView(model: model, store: model.settings))
-            window.setFrameAutosaveName("IceScreen.Settings")
-            window.center()
-            settingsWindow = window
-        }
-        model.checkPermissions()
-        if settingsWindow?.isMiniaturized == true { settingsWindow?.deminiaturize(nil) }
-        NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard notification.object as AnyObject? === settingsWindow else { return }
-        NSApp.setActivationPolicy(.accessory)
+        settingsController.show()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

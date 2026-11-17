@@ -7,9 +7,9 @@ import UniformTypeIdentifiers
 
 struct AppearanceSettings: View {
     @ObservedObject var store: SettingsStore
-    @State private var showOriginal = false
+    @ObservedObject var images: AppearanceImageStore
+    @Binding var showOriginal: Bool
     @State private var showImagePicker = false
-    @StateObject private var images = AppearanceImageStore()
     private let defaults = Preferences()
 
     var body: some View {
@@ -20,7 +20,7 @@ struct AppearanceSettings: View {
                     Spacer()
                     if images.isLoading { ProgressView().controlSize(.small) }
                     Button(L10n.text("选择图片…", "Choose image…")) { showImagePicker = true }
-                    if images.image != nil {
+                    if images.hasSelection {
                         Button(L10n.text("恢复示例", "Reset sample")) { images.reset() }
                     }
                     Toggle(L10n.text("对比原图", "Compare original"), isOn: $showOriginal).toggleStyle(.button)
@@ -91,7 +91,7 @@ struct AppearanceSettings: View {
         .alert(L10n.text("无法读取图片", "Unable to read image"), isPresented: Binding(get: { images.error != nil }, set: { if !$0 { images.error = nil } })) {
             Button(L10n.text("好", "OK"), role: .cancel) { images.error = nil }
         } message: { Text(images.error ?? "") }
-        .onDisappear { images.cancelLoading() }
+        .onAppear { images.restoreIfNeeded() }
     }
 }
 
@@ -297,6 +297,8 @@ enum AppearanceSample {
     static var light: CVPixelBuffer { image(dark: false, language: L10n.language) }
     static var dark: CVPixelBuffer { image(dark: true, language: L10n.language) }
     private static var samples: [AppLanguage: [Bool: CVPixelBuffer]] = [:]
+
+    static func clearCache() { samples.removeAll() }
 
     static func image(dark: Bool, language: AppLanguage) -> CVPixelBuffer {
         if let sample = samples[language]?[dark] { return sample }

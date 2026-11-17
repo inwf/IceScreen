@@ -56,7 +56,14 @@ final class AppearanceImageStore: ObservableObject {
     @Published private(set) var image: AppearanceImage?
     @Published private(set) var isLoading = false
     @Published var error: String?
+    @Published private(set) var hasSelection = false
+    private var sourceURL: URL?
     private var task: Task<Void, Never>?
+
+    func restoreIfNeeded() {
+        guard image == nil, task == nil, let sourceURL else { return }
+        load(sourceURL)
+    }
 
     func load(_ url: URL) {
         cancelLoading()
@@ -69,6 +76,8 @@ final class AppearanceImageStore: ObservableObject {
                     let loaded = try await worker.value
                     guard !Task.isCancelled else { return }
                     image = loaded
+                    sourceURL = url
+                    hasSelection = true
                 } catch {
                     guard !Task.isCancelled else { return }
                     self.error = error.localizedDescription
@@ -86,6 +95,12 @@ final class AppearanceImageStore: ObservableObject {
     }
 
     func reset() {
+        releaseDecodedImage()
+        sourceURL = nil
+        hasSelection = false
+    }
+
+    func releaseDecodedImage() {
         cancelLoading()
         image = nil
         error = nil

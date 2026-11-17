@@ -6,17 +6,17 @@ import IceCore
 struct SettingsView: View {
     let model: ApplicationModel
     @ObservedObject var store: SettingsStore
-    @State private var selection: SettingsPage? = .general
+    @ObservedObject var state: SettingsWindowState
     @State private var screenPermission = false
     @State private var accessibilityPermission = false
     @State private var hotkeysActive = false
     @State private var loginEnabled = false
     @State private var displayedError: String?
-    private var page: SettingsPage { selection ?? .general }
+    private var page: SettingsPage { state.selection ?? .general }
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
+            List(selection: $state.selection) {
                 Section(L10n.text("偏好设置", "Preferences")) {
                     ForEach(SettingsPage.allCases.filter { $0 != .about }) { item in
                         Label(item.title, systemImage: item.icon)
@@ -36,7 +36,7 @@ struct SettingsView: View {
                     switch page {
                     case .general: general
                     case .floatingWindows: floatingWindows
-                    case .appearance: AppearanceSettings(store: store)
+                    case .appearance: AppearanceSettings(store: store, images: state.images, showOriginal: $state.showOriginal)
                     case .detection: detection
                     case .media: media
                     case .keyboard: keyboard
@@ -337,7 +337,7 @@ struct SettingsView: View {
     }
 }
 
-private enum SettingsPage: CaseIterable, Hashable, Identifiable {
+enum SettingsPage: CaseIterable, Hashable, Identifiable {
     case general, keyboard, floatingWindows, appearance, media, detection, about
     var id: Self { self }
     var title: String {

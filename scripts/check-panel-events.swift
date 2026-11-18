@@ -311,6 +311,11 @@ enum PanelEventChecks {
         defer { subscription.cancel() }
         let regions = chrome.state.regions(in: surface.bounds.size).map(\.frame)
         for language in [AppLanguage.english, .chinese, .english] {
+            let sidebarTitles = SettingsPage.allCases.map { $0.title(in: language) }
+            let expected = language == .english
+                ? ["General", "Shortcuts", "Panels", "Appearance", "Media", "Detection & Automation", "About"]
+                : ["通用", "快捷键", "浮窗", "外观", "媒体", "检测与自动化", "关于"]
+            precondition(sidebarTitles == expected, "Settings rows must use their explicit language, independently of the previous one.")
             store.value.language = language
             precondition(chrome.state.value.language == language, "Existing panel chrome must update language immediately.")
             precondition(chrome.state.regions(in: surface.bounds.size).map(\.frame) == regions,

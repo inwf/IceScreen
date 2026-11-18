@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Switching languages now updates all seven settings sidebar labels immediately and keeps the current page selected. Picker options and the quick capture gesture label also follow the selected language.
+
+---
+
+### 修复
+
+- 切换语言后，设置侧栏的七个页面名称会立即更新，并保留当前选中的页面。选项菜单和快速捕获手势的文字也会随语言切换。
+
 ## 1.2.9 — 2026-11-18
 
 ### Added

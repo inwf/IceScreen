@@ -15,20 +15,24 @@ struct SettingsView: View {
     private var page: SettingsPage { state.selection ?? .general }
 
     var body: some View {
+        let language = store.value.language
         NavigationSplitView {
             List(selection: $state.selection) {
-                Section(L10n.text("偏好设置", "Preferences")) {
+                Section(L10n.text("偏好设置", "Preferences", language: language)) {
                     ForEach(SettingsPage.allCases.filter { $0 != .about }) { item in
-                        Label(item.title, systemImage: item.icon)
+                        Label(item.title(in: language), systemImage: item.icon)
                             .tag(item)
                     }
                 }
                 Section {
-                    Label(SettingsPage.about.title, systemImage: SettingsPage.about.icon).tag(SettingsPage.about)
+                    Label(SettingsPage.about.title(in: language), systemImage: SettingsPage.about.icon).tag(SettingsPage.about)
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
+            // AppKit can retain sidebar row views across language changes. Keep the selection in window state.
+            .id(language)
+            .navigationSplitViewColumnWidth(min: language == .english ? 210 : 180,
+                                            ideal: language == .english ? 220 : 200, max: 240)
         } detail: {
             ZStack {
                 Color(nsColor: .windowBackgroundColor)
@@ -48,12 +52,12 @@ struct SettingsView: View {
                 .animation(nil, value: page)
             }
             .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle(page.title)
+            .navigationTitle(page.title(in: language))
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minHeight: 540, idealHeight: 640)
         .background(Color(nsColor: .windowBackgroundColor))
-        .environment(\.locale, store.value.language.locale)
+        .environment(\.locale, language.locale)
         .onReceive(model.$screenPermission.removeDuplicates()) { screenPermission = $0 }
         .onReceive(model.$accessibilityPermission.removeDuplicates()) { accessibilityPermission = $0 }
         .onReceive(model.$hotkeysActive.removeDuplicates()) { hotkeysActive = $0 }
@@ -95,14 +99,15 @@ struct SettingsView: View {
     }
 
     private var floatingWindows: some View {
-        Form {
+        let language = store.value.language
+        return Form {
             Section(L10n.text("显示与位置", "Display and position")) {
                 Toggle(L10n.text("多窗口模式", "Allow multiple panels"), isOn: $store.value.multiWindow)
                 Toggle(L10n.text("快速捕获时智能识别局部边界", "Detect content boundaries during quick capture"), isOn: $store.value.smartRegionCapture)
                 Text(L10n.text("识别鼠标所在的图片、视频或内容区域，并裁去对称黑白边框。没有合适边界时放大鼠标附近的区域。", "Detect the image, video, or content under the pointer and crop symmetric black or white borders. If no boundary is found, zoom into the area around the pointer."))
                     .font(.caption).foregroundStyle(.secondary)
                 Picker(L10n.text("出现位置", "Initial position"), selection: $store.value.panelPosition) {
-                    ForEach(ZoomAnchor.allCases, id: \.self) { Text(positionName($0)).tag($0) }
+                    ForEach(ZoomAnchor.allCases, id: \.self) { Text(positionName($0, language: language)).tag($0) }
                 }
                 Toggle(L10n.text("显示在全屏桌面空间", "Show in full-screen Spaces"), isOn: $store.value.showOnFullscreenSpaces)
             }
@@ -122,7 +127,8 @@ struct SettingsView: View {
     }
 
     private var frameRateSettings: some View {
-        Group {
+        let language = store.value.language
+        return Group {
             Section {
                 Picker(L10n.text("默认帧率", "Default frame rate"), selection: $store.value.defaultFPS) {
                     ForEach(Preferences.frameRates, id: \.self) { Text("\($0) FPS").tag($0) }
@@ -137,7 +143,7 @@ struct SettingsView: View {
                             Text(app).lineLimit(1)
                             Spacer()
                             Text("\(store.value.appFrameRates[app]!) FPS").foregroundStyle(.secondary)
-                            Button(L10n.text("重置", "Reset")) {
+                            Button(L10n.text("重置", "Reset", language: language)) {
                                 store.value.appFrameRates.removeValue(forKey: app)
                                 model.sessions.filter { $0.bundleID == app }.forEach { $0.setFPS(store.value.defaultFPS) }
                             }.controlSize(.small)
@@ -170,15 +176,16 @@ struct SettingsView: View {
     }
 
     private var detection: some View {
-        Form {
+        let language = store.value.language
+        return Form {
             Section {
                 Toggle(L10n.text("检测内容空闲", "Detect idle content"), isOn: $store.value.idleDetection)
                 Picker(L10n.text("保持静止多久后提醒", "Notify after idle for"), selection: $store.value.idleSeconds) {
-                    ForEach([5.0, 10, 20, 30, 60, 120], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds")).tag($0) }
+                    ForEach([5.0, 10, 20, 30, 60, 120], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds", language: language)).tag($0) }
                 }.disabled(!store.value.idleDetection)
                 Toggle(L10n.text("检测画面变化", "Detect content changes"), isOn: $store.value.changeDetection)
                 Picker(L10n.text("变化检测前的安静时间", "Quiet time before detecting changes"), selection: $store.value.changeSeconds) {
-                    ForEach([1.0, 5, 10, 20, 30, 60, 120], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds")).tag($0) }
+                    ForEach([1.0, 5, 10, 20, 30, 60, 120], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds", language: language)).tag($0) }
                 }.disabled(!store.value.changeDetection)
                 Toggle(L10n.text("检测细微变化", "Detect subtle changes"), isOn: $store.value.sensitiveDetection)
             } header: { Text(L10n.text("检测条件", "Detection rules")) } footer: {
@@ -194,7 +201,7 @@ struct SettingsView: View {
                     TextField(L10n.text("Shell 命令（留空时关闭）", "Shell command (leave empty to disable)"), text: $store.value.detectionCommand, axis: .vertical)
                         .font(.system(.body, design: .monospaced)).lineLimit(3...6)
                     Picker(L10n.text("执行超时", "Execution timeout"), selection: $store.value.detectionCommandTimeout) {
-                        ForEach([5.0, 15, 30, 60, 120, 300], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds")).tag($0) }
+                        ForEach([5.0, 15, 30, 60, 120, 300], id: \.self) { Text(L10n.text("\(Int($0)) 秒", "\(Int($0)) seconds", language: language)).tag($0) }
                     }
                     Text(L10n.text("通过 /bin/sh 执行。提供 ICESCREEN_EVENT（idle/change）、ICESCREEN_APP、ICESCREEN_BUNDLE_ID、ICESCREEN_WINDOW_ID 和 ICESCREEN_WINDOW_TITLE 环境变量。每个浮窗同时运行一个命令；执行期间忽略新的命令触发。超时或关闭浮窗会终止命令进程组。", "Runs through /bin/sh with ICESCREEN_EVENT (idle/change), ICESCREEN_APP, ICESCREEN_BUNDLE_ID, ICESCREEN_WINDOW_ID, and ICESCREEN_WINDOW_TITLE environment variables. Each panel runs one command at a time and ignores new triggers while it runs. A timeout or closing the panel terminates the command process group."))
                         .font(.caption).foregroundStyle(.secondary)
@@ -216,7 +223,8 @@ struct SettingsView: View {
                     Spacer()
                     ShortcutRecorder(shortcut: Binding(
                         get: { store.value.effectiveRegionShortcut ?? Shortcut(shift: true) },
-                        set: { store.value.regionShortcut = $0 }), monitor: model.hotkeys,
+                        set: { store.value.regionShortcut = $0 }), title: L10n.text("捕获窗口区域", "Capture window region"),
+                        monitor: model.hotkeys,
                         validate: { store.value.shortcutConflict($0, for: .region) })
                         .frame(width: 160, height: 28)
                     if store.value.regionShortcut != nil {
@@ -255,7 +263,7 @@ struct SettingsView: View {
                 HStack {
                     Text(L10n.text("捕获手势", "Capture gesture"))
                     Spacer()
-                    QuickCaptureRecorder(modifiers: $store.value.quickCaptureModifiers, monitor: model.hotkeys)
+                    QuickCaptureRecorder(modifiers: $store.value.quickCaptureModifiers, language: store.value.language, monitor: model.hotkeys)
                         .frame(width: 210, height: 28)
                         .disabled(!store.value.quickRegionCapture)
                 }
@@ -302,7 +310,7 @@ struct SettingsView: View {
                 .accessibilityIdentifier("about.github")
             Spacer()
             VStack(spacing: 4) {
-                Text("Copyright © 2026 IceScreen contributors")
+                Text(L10n.text("版权所有 © 2026 IceScreen 贡献者", "Copyright © 2026 IceScreen contributors"))
                 Text("GPL-3.0-or-later")
             }.font(.caption2).foregroundStyle(.tertiary)
         }.padding(30).frame(maxWidth: .infinity)
@@ -312,7 +320,7 @@ struct SettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            ShortcutRecorder(shortcut: shortcut, monitor: model.hotkeys,
+            ShortcutRecorder(shortcut: shortcut, title: title, monitor: model.hotkeys,
                              validate: { store.value.shortcutConflict($0, for: action) }).frame(width: 160, height: 28)
         }
     }
@@ -330,11 +338,17 @@ struct SettingsView: View {
         LabeledContent(detail) { Text(key).font(.system(.body, design: .monospaced)).foregroundStyle(.secondary) }
     }
 
-    private func positionName(_ anchor: ZoomAnchor) -> String {
+    private func positionName(_ anchor: ZoomAnchor, language: AppLanguage) -> String {
         switch anchor {
-        case .topLeft: return L10n.text("左上", "Top left"); case .top: return L10n.text("上方", "Top"); case .topRight: return L10n.text("右上", "Top right")
-        case .left: return L10n.text("左侧", "Left"); case .center: return L10n.text("居中", "Center"); case .right: return L10n.text("右侧", "Right")
-        case .bottomLeft: return L10n.text("左下", "Bottom left"); case .bottom: return L10n.text("下方", "Bottom"); case .bottomRight: return L10n.text("右下", "Bottom right")
+        case .topLeft: return L10n.text("左上", "Top left", language: language)
+        case .top: return L10n.text("上方", "Top", language: language)
+        case .topRight: return L10n.text("右上", "Top right", language: language)
+        case .left: return L10n.text("左侧", "Left", language: language)
+        case .center: return L10n.text("居中", "Center", language: language)
+        case .right: return L10n.text("右侧", "Right", language: language)
+        case .bottomLeft: return L10n.text("左下", "Bottom left", language: language)
+        case .bottom: return L10n.text("下方", "Bottom", language: language)
+        case .bottomRight: return L10n.text("右下", "Bottom right", language: language)
         }
     }
 }
@@ -342,15 +356,15 @@ struct SettingsView: View {
 enum SettingsPage: CaseIterable, Hashable, Identifiable {
     case general, keyboard, floatingWindows, appearance, media, detection, about
     var id: Self { self }
-    var title: String {
+    func title(in language: AppLanguage) -> String {
         switch self {
-        case .general: return L10n.text("通用", "General")
-        case .floatingWindows: return L10n.text("浮窗", "Panels")
-        case .appearance: return L10n.text("外观", "Appearance")
-        case .media: return L10n.text("媒体", "Media")
-        case .detection: return L10n.text("检测与自动化", "Detection & Automation")
-        case .keyboard: return L10n.text("快捷键", "Shortcuts")
-        case .about: return L10n.text("关于", "About")
+        case .general: return L10n.text("通用", "General", language: language)
+        case .floatingWindows: return L10n.text("浮窗", "Panels", language: language)
+        case .appearance: return L10n.text("外观", "Appearance", language: language)
+        case .media: return L10n.text("媒体", "Media", language: language)
+        case .detection: return L10n.text("检测与自动化", "Detection & Automation", language: language)
+        case .keyboard: return L10n.text("快捷键", "Shortcuts", language: language)
+        case .about: return L10n.text("关于", "About", language: language)
         }
     }
     var icon: String {
@@ -368,11 +382,14 @@ enum SettingsPage: CaseIterable, Hashable, Identifiable {
 
 struct ShortcutRecorder: NSViewRepresentable {
     @Binding var shortcut: Shortcut
+    let title: String
     let monitor: HotkeyMonitor
     let validate: (Shortcut) -> String?
     func makeNSView(context: Context) -> ShortcutButton { ShortcutButton(frame: .zero) }
     func updateNSView(_ view: ShortcutButton, context: Context) {
         if !view.recording { view.title = shortcut.display }
+        view.setAccessibilityLabel(title)
+        view.setAccessibilityValue(shortcut.display)
         view.savedTitle = shortcut.display
         view.onRecord = { shortcut = $0 }
         view.validate = validate
@@ -383,6 +400,7 @@ struct ShortcutRecorder: NSViewRepresentable {
 
 struct QuickCaptureRecorder: NSViewRepresentable {
     @Binding var modifiers: QuickCaptureModifiers
+    let language: AppLanguage
     let monitor: HotkeyMonitor
     func makeNSView(context: Context) -> ShortcutButton {
         let view = ShortcutButton(frame: .zero)
@@ -390,13 +408,13 @@ struct QuickCaptureRecorder: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: ShortcutButton, context: Context) {
-        let title = L10n.text("\(modifiers.display) + 双击", "\(modifiers.display) + double-click")
+        let title = L10n.text("\(modifiers.display) + 双击", "\(modifiers.display) + double-click", language: language)
         view.isEnabled = context.environment.isEnabled
         if !view.recording { view.title = title }
         view.savedTitle = title
         view.onRecordModifiers = { modifiers = $0 }
         view.onRecording = { monitor.recording = $0 }
-        view.setAccessibilityLabel(L10n.text("编辑快速捕获手势", "Edit quick capture gesture"))
+        view.setAccessibilityLabel(L10n.text("编辑快速捕获手势", "Edit quick capture gesture", language: language))
         view.setAccessibilityValue(title)
     }
     static func dismantleNSView(_ view: ShortcutButton, coordinator: ()) { view.finishRecording() }

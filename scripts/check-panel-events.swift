@@ -360,8 +360,6 @@ enum PanelEventChecks {
         }
         autoreleasepool {
             controller.show()
-            frame = controller.window!.frame.offsetBy(dx: 12, dy: -12)
-            controller.window!.setFrame(frame, display: true)
             originalWindow = controller.window
             originalHost = controller.window?.contentViewController
             wait("Settings must construct the actual appearance preview.") { preview(in: controller.window?.contentView) != nil }
@@ -372,7 +370,20 @@ enum PanelEventChecks {
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         precondition(controller.window === originalWindow && controller.window!.isVisible,
                      "Reopening must cancel cleanup and reuse the settings window.")
-        autoreleasepool { controller.window!.close() }
+        autoreleasepool {
+            let window = controller.window!
+            let screen = window.screen!
+            let visible = screen.visibleFrame
+            // Exercise a non-maximized frame that fits the runner's 1024 × 674 pt desktop too.
+            let requested = NSRect(x: visible.minX + 24, y: visible.minY + 12,
+                                   width: min(840, visible.width - 48), height: min(600, visible.height - 24))
+            window.setFrame(window.constrainFrameRect(requested, to: screen), display: true)
+            window.contentView?.layoutSubtreeIfNeeded()
+            processWindowEvents(for: 0.1)
+            frame = window.frame
+            print("Closing settings: requested=\(requested), actual=\(frame), visibleFrame=\(visible)")
+            window.close()
+        }
         wait("Closed settings must release their window, hosting controller, and preview.") {
             controller.window == nil && originalWindow == nil && originalHost == nil && originalPreview == nil
         }
@@ -382,7 +393,12 @@ enum PanelEventChecks {
         precondition(SettingsStore(defaults: defaults).value == expectedPreferences,
                      "Releasing settings must preserve every saved preference.")
         controller.show()
-        precondition(controller.window!.frame == frame, "Rebuilt settings must restore window geometry.")
+        wait("Rebuilt settings must construct the appearance preview.") { preview(in: controller.window?.contentView) != nil }
+        controller.window!.contentView?.layoutSubtreeIfNeeded()
+        processWindowEvents(for: 0.1)
+        let restored = controller.window!.frame
+        print("Rebuilt settings: beforeClose=\(frame), restored=\(restored)")
+        precondition(restored == frame, "Rebuilt settings must restore the actual window geometry before closing.")
         precondition(controller.state.selection == .appearance && controller.state.showOriginal,
                      "Rebuilt settings must restore the selected page and comparison mode.")
         precondition(controller.window!.title == "IceScreen Settings")

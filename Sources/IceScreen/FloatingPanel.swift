@@ -41,7 +41,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var onDetection: ((DetectionEvent) -> Void)?
     var onDetectionEnabled: (() -> Void)?
     var onClose: ((CaptureSession) -> Void)?
-    var onFocus: ((SCWindow) async throws -> Void)?
+    var onFocus: ((SourceWindowTarget) async throws -> Void)?
     var onPreview: (() -> Void)?
     var onFrameRate: ((String, Int) -> Void)?
     var onResize: ((Double) -> Void)?
@@ -54,6 +54,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     private(set) var mediaSeekEnabled = true
     private var resizeTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
+    private var previousWindow: SourceWindowTarget?
+    private var returnTask: Task<Void, Never>?
     private var closeAfterFocus = false
     private var closed = false
     private var userIsResizing = false
@@ -260,6 +262,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func applyPreferences(_ value: Preferences) {
+        if !value.clickToFocus { clearFocusReturn() }
         idleSeconds = value.idleSeconds
         changeSeconds = value.changeSeconds
         clickToFocus = value.clickToFocus
@@ -317,12 +320,64 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     func clicked() {
         Self.interactionLog.debug("Content click: enabled=\(self.clickToFocus), closed=\(self.closed)")
         guard clickToFocus, !closed else { return }
-        focusSource()
+        let current = SourceWindowTarget.frontmost()
+        if let previousWindow, focusTarget.matches(current) || (focusTask != nil && previousWindow.matches(current)) {
+            scheduleReturn(to: previousWindow)
+        } else if focusTask == nil {
+            clearFocusReturn()
+            previousWindow = focusTarget.matches(current) ? nil : current
+            requestFocus(closeAfter: false)
+        }
+    }
+
+    private func clearFocusReturn() {
+        returnTask?.cancel()
+        returnTask = nil
+        previousWindow = nil
+    }
+
+    private func scheduleReturn(to previous: SourceWindowTarget) {
+        guard returnTask == nil, let onFocus else { return }
+        let outbound = focusTask
+        returnTask = Task { [weak self] in
+            defer {
+                if !Task.isCancelled {
+                    self?.previousWindow = nil
+                    self?.returnTask = nil
+                }
+            }
+            do {
+                // Give a double-click on the source a chance to focus and close without jumping away first.
+                try await Task.sleep(for: .seconds(NSEvent.doubleClickInterval))
+                await outbound?.value
+                try Task.checkCancellation()
+                guard let self, self.previousWindow === previous else { return }
+                guard self.focusTarget.matches(SourceWindowTarget.frontmost()) else { return }
+                guard !previous.retainedWindowWasClosed() else {
+                    self.showHint(L10n.text("上一个窗口已关闭", "Previous window closed"))
+                    return
+                }
+                try await onFocus(previous)
+            } catch {
+                if !Task.isCancelled && !(error is CancellationError) {
+                    self?.showHint(L10n.text("无法返回上一个窗口", "Couldn’t return to the previous window"))
+                    Self.interactionLog.error("Previous window focus failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
+
+    func cancelPendingReturn() {
+        returnTask?.cancel()
+        returnTask = nil
     }
 
     func doubleClicked(reset: Bool) {
         if reset { resetZoom() }
-        else { requestFocus(closeAfter: true) }
+        else {
+            clearFocusReturn()
+            requestFocus(closeAfter: true)
+        }
     }
 
     func showFrameRateMenu() {
@@ -367,6 +422,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     @objc func toggleEnhanced() { enhanced.toggle(); updateStatus() }
     @objc func toggleAutoHide() { autoHide.toggle() }
     @objc func focusSource() {
+        clearFocusReturn()
         requestFocus(closeAfter: false)
     }
     private func requestFocus(closeAfter: Bool) {
@@ -380,12 +436,13 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
             guard let self else { return }
             defer { self.focusTask = nil; self.closeAfterFocus = false }
             do {
-                try await onFocus(self.source)
+                try await onFocus(self.focusTarget)
                 try Task.checkCancellation()
                 self.refreshSourceState()
                 Self.interactionLog.debug("Source window focus confirmed")
                 if self.closeAfterFocus { self.close() }
             } catch {
+                self.clearFocusReturn()
                 self.preserveOnSourceFocus = false
                 if !Task.isCancelled && !(error is CancellationError) {
                     self.failure = error.localizedDescription
@@ -515,6 +572,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     @objc func close() {
+        clearFocusReturn()
         focusTask?.cancel()
         guard !closed else { return }
         closed = true
@@ -748,7 +806,7 @@ final class PanelSurface: NSView {
     private func updateHint() {
         updateControls()
         dim.isHidden = !hovered || !dimOnHover
-        input.toolTip = (clickToFocus ? L10n.text("单击返回来源 · ", "Click to focus source · ") : "") + L10n.text("双击返回并关闭 · 轻按 \(triggerLabel) 隐藏 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Tap \(triggerLabel) to hide · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close")
+        input.toolTip = (clickToFocus ? L10n.text("单击切换来源与上一个窗口 · ", "Click to switch between the source and previous window · ") : "") + L10n.text("双击返回并关闭 · 轻按 \(triggerLabel) 隐藏 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Tap \(triggerLabel) to hide · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close")
         needsLayout = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -842,6 +900,7 @@ final class PanelInput: NSControl {
         dragEvent = event
         clickGesture.begin(at: event.locationInWindow)
         doubleClick = event.clickCount == 2
+        if doubleClick { owner?.cancelPendingReturn() }
         resetOnDoubleClick = event.modifierFlags.contains(.command)
         owner?.beginInteraction()
         interacting = true

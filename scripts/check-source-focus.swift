@@ -128,7 +128,7 @@ enum SourceFocusChecks {
         session.onFocus = { window in
             requests += 1
             NativeFocusDiagnostics.event("focus_callback_started", details: ["request": requests, "windowID": window.windowID])
-            try await catalog.focus(window, retainedTarget: session.focusTarget)
+            try await catalog.focus(window)
             confirmations += 1
             NativeFocusDiagnostics.event("focus_callback_confirmed", details: ["confirmation": confirmations, "windowID": window.windowID])
             print("Confirmed fixture return \(confirmations).")
@@ -176,8 +176,14 @@ enum SourceFocusChecks {
                                  frame: original, spaces: originalSpaces, session: session)
 
         for _ in 0..<3 {
-            NativeFocusDiagnostics.step("prepare_other_foreground")
-            try await catalog.focus(other)
+            NativeFocusDiagnostics.step("click_back_to_other")
+            let back = confirmations + 1
+            try click(session)
+            try await wait("confirm_exact_previous_window") {
+                try confirmations == back && otherApp.isActive
+                    && WindowActivation.windowID(of: focusedWindow(otherApp)) == other.windowID
+                    && session.panel.isVisible && !session.panel.isKeyWindow
+            }
             let expected = confirmations + 1
             try click(session)
             try await wait("click_delivery") { requests == expected }
@@ -238,18 +244,20 @@ enum SourceFocusChecks {
             NativeFocusDiagnostics.snapshot("source_restoration_confirmed")
         }
 
-        for _ in 0..<3 {
-            NativeFocusDiagnostics.begin("repeated_source_click")
+        try await catalog.focus(sibling)
+        for window in [source, sibling, source] {
+            NativeFocusDiagnostics.begin("same_app_round_trip")
             let expected = confirmations + 1
             try click(session)
             try await wait("click_delivery") { requests == expected }
             try await wait("focus_confirmation") { confirmations == expected }
-            try await verifyRestored(source, application: sourceApp, target: target,
-                                     frame: original, spaces: originalSpaces, session: session)
+            try await wait("confirm_exact_sibling_or_source") {
+                try sourceApp.isActive && WindowActivation.windowID(of: focusedWindow(sourceApp)) == window.windowID
+                    && session.panel.isVisible && !session.panel.isKeyWindow
+            }
         }
 
-        try await catalog.focus(other)
-        print("Checking double-click source return and panel close.")
+        print("Checking double-click with a previous window remembered.")
         NativeFocusDiagnostics.begin("double_click_close")
         let expected = confirmations + 1
         let requestsBeforeDoubleClick = requests
@@ -360,7 +368,7 @@ enum SourceFocusChecks {
         session.onFocus = { window in
             requests += 1
             NativeFocusDiagnostics.event("focus_callback_started", details: ["request": requests, "windowID": window.windowID])
-            try await catalog.focus(window, retainedTarget: session.focusTarget)
+            try await catalog.focus(window)
             confirmations += 1
             NativeFocusDiagnostics.event("focus_callback_confirmed", details: ["confirmation": confirmations, "windowID": window.windowID])
         }
@@ -413,11 +421,13 @@ enum SourceFocusChecks {
             return true
         }
         NativeFocusDiagnostics.begin("return_to_fullscreen_space")
-        try await catalog.focus(videoSource, retainedTarget: videoTarget)
+        try click(session)
         try await wait("confirm_return_to_fullscreen_space") {
             let videoVisible = try WindowActivation.isOnVisibleSpace(videoSource.windowID)
             let sourceVisible = try WindowActivation.isOnVisibleSpace(source.windowID)
-            return try video.isActive && isFullScreen(videoElement) && videoVisible && !sourceVisible && !isOnScreen(source.windowID)
+            return try confirmations == 2 && video.isActive && isFullScreen(videoElement) && videoVisible
+                && WindowActivation.windowID(of: focusedWindow(video)) == videoSource.windowID
+                && !sourceVisible && !isOnScreen(source.windowID)
         }
         NativeFocusDiagnostics.begin("uncached_terminal_return")
         NativeFocusDiagnostics.step("uncached_focus_request")

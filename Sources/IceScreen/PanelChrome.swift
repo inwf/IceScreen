@@ -144,7 +144,7 @@ struct PanelChrome: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 12) {
                     hintKey(state.value.clickToFocus ? L10n.text("单击", "Click") : L10n.text("双击", "Double-click"),
-                            state.value.clickToFocus ? L10n.text("返回来源", "Focus") : L10n.text("返回并关闭", "Focus & close"))
+                            state.value.clickToFocus ? L10n.text("切换窗口", "Switch") : L10n.text("返回并关闭", "Focus & close"))
                     if state.value.previewEnabled && size.width >= 300 {
                         hintKey("Space", L10n.text("预览", "Preview"))
                     }

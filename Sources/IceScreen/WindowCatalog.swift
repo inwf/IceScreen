@@ -82,10 +82,6 @@ final class WindowCatalog: ObservableObject {
     }
 
     func focus(_ source: SCWindow, retainedTarget: SourceWindowTarget? = nil) async throws {
-        try Task.checkCancellation()
-        focusGeneration += 1
-        let generation = focusGeneration
-        guard AXIsProcessTrusted() else { throw RequestError.message(L10n.text("需要辅助功能权限才能定位来源窗口。", "Accessibility permission is required to focus the source window.")) }
         guard let owner = source.owningApplication else {
             throw RequestError.message(L10n.text("来源应用已经退出。", "The source app has quit."))
         }
@@ -93,7 +89,17 @@ final class WindowCatalog: ObservableObject {
         guard reference.processID == owner.processID, reference.windowID == source.windowID else {
             throw RequestError.message(L10n.text("来源窗口标识与捕获会话不一致。", "The source window ID does not match the capture session."))
         }
+        try await focus(reference)
+    }
+
+    func focus(_ reference: SourceWindowTarget) async throws {
+        try Task.checkCancellation()
+        focusGeneration += 1
+        let generation = focusGeneration
+        guard AXIsProcessTrusted() else { throw RequestError.message(L10n.text("需要辅助功能权限才能定位来源窗口。", "Accessibility permission is required to focus the source window.")) }
         guard let app = reference.application else { throw RequestError.message(L10n.text("来源应用已经退出。", "The source app has quit.")) }
+        let pid = reference.processID
+        let windowID = reference.windowID
         let root = reference.root
         func minimized(_ target: AXUIElement) throws -> Bool {
             var minimized: CFTypeRef?
@@ -117,7 +123,7 @@ final class WindowCatalog: ObservableObject {
                 try set(root, kAXFocusedWindowAttribute, target, operation: L10n.text("聚焦来源窗口", "Focus source window"))
             }
         }
-        var progress = SourceFocusProgress(processID: owner.processID, windowID: source.windowID,
+        var progress = SourceFocusProgress(processID: pid, windowID: windowID,
                                           startedAt: ProcessInfo.processInfo.systemUptime)
         var pendingOperation = ""
         while true {
@@ -132,7 +138,7 @@ final class WindowCatalog: ObservableObject {
             do {
                 let entry = try reference.validate()
                 observation.onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
-                observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
+                observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(windowID)
                 if attempt {
                     if observation.hidden {
                         try set(root, kAXHiddenAttribute, kCFBooleanFalse, operation: L10n.text("显示来源应用", "Show source app"))
@@ -140,7 +146,7 @@ final class WindowCatalog: ObservableObject {
                     // WindowServer 可以先改变前台 PID；桌面切换仍需应用激活，且不依赖 AXWindows。
                     if progress.requiresApplicationActivation(for: observation) {
                         let accepted = app.activate(options: [.activateAllWindows])
-                        Self.focusLog.debug("Application activation: accepted=\(accepted), PID=\(owner.processID), window=\(source.windowID), visibleSpace=\(observation.onVisibleSpace), hidden=\(observation.hidden)")
+                        Self.focusLog.debug("Application activation: accepted=\(accepted), PID=\(pid), window=\(windowID), visibleSpace=\(observation.onVisibleSpace), hidden=\(observation.hidden)")
                     }
                 }
                 if app.isHidden {
@@ -157,9 +163,9 @@ final class WindowCatalog: ObservableObject {
                     throw SourceFocusPending(operation: L10n.text("等待来源窗口完成恢复", "Wait for source window to restore"))
                 }
                 if attempt {
-                    Self.focusLog.debug("Selecting exact source: PID=\(owner.processID), window=\(source.windowID), resolution=\(reference.resolutionState, privacy: .public)")
+                    Self.focusLog.debug("Selecting exact window: PID=\(pid), window=\(windowID), resolution=\(reference.resolutionState, privacy: .public)")
                     try set(target, kAXMainAttribute, kCFBooleanTrue, operation: L10n.text("选择来源窗口", "Select source window"))
-                    try WindowActivation.bringForward(processID: owner.processID, windowID: source.windowID)
+                    try WindowActivation.bringForward(processID: pid, windowID: windowID)
                     try raise(target)
                     try selectKeyboardFocus(target)
                 }
@@ -183,14 +189,14 @@ final class WindowCatalog: ObservableObject {
                 observation.minimized = try minimized(target)
                 let confirmedEntry = try reference.validate()
                 observation.onScreen = confirmedEntry?[kCGWindowIsOnscreen as String] as? Bool == true
-                observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
+                observation.onVisibleSpace = try WindowActivation.isOnVisibleSpace(windowID)
                 if progress.observe(observation, at: ProcessInfo.processInfo.systemUptime) { return }
             } catch let pending as SourceFocusPending {
                 progress.pending()
                 pendingOperation = pending.operation
             }
             guard !progress.expired(at: ProcessInfo.processInfo.systemUptime) else {
-                Self.focusLog.error("Source focus timeout: expectedPID=\(owner.processID), expectedWindow=\(source.windowID), frontmostPID=\(observation.foregroundPID ?? 0), focusedWindow=\(observation.focusedWindowID ?? 0), onScreen=\(observation.onScreen), axStatus=\(read.rawValue)")
+                Self.focusLog.error("Window focus timeout: expectedPID=\(pid), expectedWindow=\(windowID), frontmostPID=\(observation.foregroundPID ?? 0), focusedWindow=\(observation.focusedWindowID ?? 0), onScreen=\(observation.onScreen), axStatus=\(read.rawValue)")
                 let foreground = NSWorkspace.shared.frontmostApplication
                 Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")
                 Self.focusLog.error("Pending Accessibility transition: \(pendingOperation, privacy: .public)")

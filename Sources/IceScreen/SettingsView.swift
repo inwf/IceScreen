@@ -107,8 +107,8 @@ struct SettingsView: View {
                 Toggle(L10n.text("显示在全屏桌面空间", "Show in full-screen Spaces"), isOn: $store.value.showOnFullscreenSpaces)
             }
             Section(L10n.text("来源窗口与预览", "Source window and preview")) {
-                Toggle(L10n.text("单击定位来源窗口并保留浮窗", "Click to focus the source and keep the panel"), isOn: $store.value.clickToFocus)
-                Text(L10n.text("单击浮窗定位来源窗口并保留浮窗，双击定位后关闭浮窗。", "Click a panel to focus its source and keep the panel. Double-click to focus the source and close the panel."))
+                Toggle(L10n.text("单击切换来源与上一个窗口", "Click to switch between the source and previous window"), isOn: $store.value.clickToFocus)
+                Text(L10n.text("单击浮窗聚焦来源窗口，再单击同一浮窗回到刚才使用的窗口。双击聚焦来源并关闭浮窗。", "Click a panel to focus its source. Click it again to return to your previous window. Double-click to focus the source and close the panel."))
                     .font(.caption).foregroundStyle(.secondary)
                 Picker(L10n.text("来源窗口获得焦点时", "When the source gains focus"), selection: $store.value.sourceFocusBehavior) {
                     Text(L10n.text("保持浮窗", "Keep panel")).tag(SourceFocusBehavior.keep)
@@ -275,7 +275,7 @@ struct SettingsView: View {
                     instruction("C", L10n.text("切换画面变化检测", "Toggle change detection"))
                     instruction("S", L10n.text("切换细微变化检测", "Toggle subtle detection"))
                     instruction(L10n.text("双击", "Double-click"), L10n.text("定位来源窗口并关闭浮窗", "Focus source and close panel"))
-                    instruction(L10n.text("单击", "Click"), store.value.clickToFocus ? L10n.text("定位来源窗口并保留浮窗", "Focus source and keep panel") : L10n.text("单击定位已关闭，可在「浮窗」中开启", "Click-to-focus is off; enable it under Panels"))
+                    instruction(L10n.text("单击", "Click"), store.value.clickToFocus ? L10n.text("在来源与上一个窗口间切换", "Switch between the source and previous window") : L10n.text("单击切换已关闭，可在「浮窗」中开启", "Click switching is off. Enable it under Panels."))
                     instruction(L10n.text("⌘ + 拖动", "⌘ + drag"), L10n.text("框选缩放区域", "Select region to zoom"))
                     instruction(L10n.text("⌘ + 双击", "⌘ + double-click"), L10n.text("恢复完整画面", "Restore full view"))
                     instruction("0", L10n.text("恢复完整画面", "Restore full view"))

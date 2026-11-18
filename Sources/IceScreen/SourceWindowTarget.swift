@@ -17,17 +17,53 @@ final class SourceWindowTarget {
     private(set) var retainedElement: AXUIElement?
     private(set) var resolutionState = "not_resolved"
 
-    init(_ source: SCWindow) {
-        windowID = source.windowID
-        processID = source.owningApplication?.processID ?? 0
-        application = NSRunningApplication(processIdentifier: processID)
+    private init(processID: pid_t, windowID: CGWindowID, application: NSRunningApplication?, root: AXUIElement) {
+        self.windowID = windowID
+        self.processID = processID
+        self.application = application
         launchedAt = application?.launchDate
-        root = AXUIElementCreateApplication(processID)
+        self.root = root
         AXUIElementSetMessagingTimeout(root, 0.25)
+    }
+
+    convenience init(_ source: SCWindow) {
+        let pid = source.owningApplication?.processID ?? 0
+        self.init(processID: pid, windowID: source.windowID, application: NSRunningApplication(processIdentifier: pid),
+                  root: AXUIElementCreateApplication(pid))
         if AXIsProcessTrusted() {
             do { _ = try resolveElement() }
             catch { Self.log.debug("Capture-time source target retention unavailable: \(error.localizedDescription, privacy: .public)") }
         }
+    }
+
+    /// Snapshot the actual keyboard focus before a nonactivating panel changes it.
+    static func frontmost() -> SourceWindowTarget? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let pid = app.processIdentifier
+        let root = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(root, 0.25)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        let element = unsafeBitCast(value, to: AXUIElement.self)
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        var owner: pid_t = 0
+        guard AXUIElementGetPid(element, &owner) == .success, owner == pid,
+              let id = try? WindowActivation.windowID(of: element), id != kCGNullWindowID,
+              app.isActive else { return nil }
+        let target = SourceWindowTarget(processID: pid, windowID: id, application: app, root: root)
+        target.retainedElement = element
+        return target
+    }
+
+    func matches(_ target: SourceWindowTarget?) -> Bool {
+        target?.processID == processID && target?.windowID == windowID
+    }
+
+    func retainedWindowWasClosed() -> Bool {
+        guard let retainedElement else { return false }
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(retainedElement, kAXRoleAttribute as CFString, &value) == .invalidUIElement
     }
 
     func validate() throws -> [String: Any]? {

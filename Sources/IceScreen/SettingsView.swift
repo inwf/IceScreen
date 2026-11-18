@@ -304,7 +304,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Text(L10n.text("让你关注的窗口，留在眼前。", "Keep the windows you care about in view."))
-            Text(L10n.text("happy · 好朋友", "happy · good friends"))
+            Text(verbatim: "happy • 好朋友")
                 .font(.caption).foregroundStyle(.secondary)
             Link(L10n.text("GitHub 项目主页", "View on GitHub"), destination: URL(string: "https://github.com/inwf/IceScreen")!)
                 .accessibilityIdentifier("about.github")

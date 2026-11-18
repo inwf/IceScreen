@@ -25,10 +25,7 @@ final class PanelHintPresenter {
         window.ignoresMouseEvents = true
         window.level = .popUpMenu
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        let host = PanelHintHost(rootView: PanelHint(message: message))
-        host.sizingOptions = []
-        host.safeAreaRegions = []
-        host.frame = CGRect(origin: .zero, size: frame.size)
+        let host = PanelHintHost(message: message, size: frame.size)
         host.autoresizingMask = [.width, .height]
         window.contentView = host
         panel = window
@@ -74,23 +71,24 @@ final class PanelHintPresenter {
     }
 }
 
-private final class PanelHintHost: NSHostingView<PanelHint> {
+private final class PanelHintHost: NSView {
+    let bubble: PanelMessageHost
     override var isOpaque: Bool { false }
-}
 
-private struct PanelHint: View {
-    let message: String
-    var body: some View {
-        GeometryReader { geometry in
-            let bounds = CGRect(x: 8, y: 8, width: max(0, geometry.size.width - 16), height: max(0, geometry.size.height - 16))
-            let size = PanelMessage.size(for: message, width: min(380, bounds.width), style: .hint)
-            let layout = PanelMessageLayout(in: bounds, messageSize: size)
-            PanelMessage(message: message, style: .hint)
-                .frame(width: layout.message.width, height: layout.message.height)
-                .position(x: layout.message.midX, y: layout.message.midY)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .clipped()
+    init(message: String, size: CGSize) {
+        bubble = PanelMessageHost(rootView: PanelMessage(message: message, style: .hint))
+        super.init(frame: CGRect(origin: .zero, size: size))
+        addSubview(bubble)
+        setAccessibilityChildren([bubble])
+        needsLayout = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override func layout() {
+        super.layout()
+        let area = CGRect(x: 8, y: 8, width: max(0, bounds.width - 16), height: max(0, bounds.height - 16))
+        let size = PanelMessage.size(for: bubble.rootView.message, width: min(380, area.width), style: .hint)
+        bubble.frame = PanelMessageLayout(in: area, messageSize: size).message
     }
 }
 #endif

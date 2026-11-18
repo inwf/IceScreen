@@ -16,7 +16,7 @@ for source in Sources/IceScreen/*.swift; do
         app_sources+=("$source")
     fi
 done
-swiftc -parse-as-library -I .build/checks -L .build/checks -lIceCore \
+swiftc -parse-as-library -D PANEL_EVENT_DIAGNOSTICS -I .build/checks -L .build/checks -lIceCore \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     "${app_sources[@]}" scripts/check-panel-events.swift -o .build/checks/panel-events
 codesign --force --sign - .build/checks/libIceCore.dylib
@@ -33,14 +33,5 @@ for name in PanelChecks Foreground; do
     fi
     codesign --force --sign - "$bundle"
 done
-completion="$PWD/.build/checks/panel-events.result"
-stdout="$PWD/.build/checks/panel-events.stdout"
-stderr="$PWD/.build/checks/panel-events.stderr"
-rm -f "$completion" "$stdout" "$stderr"
-open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/checks/PanelChecks.app" \
-    --args "$PWD/.build/checks/Foreground.app" "$completion" "$PWD"
-cat "$stdout" "$stderr"
-if [[ ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
-    echo "Native panel checks did not complete successfully." >&2
-    exit 1
-fi
+bash scripts/run-panel-check-groups.sh "$PWD/.build/checks/PanelChecks.app" \
+    "$PWD/.build/checks/Foreground.app" "$PWD" "$PWD/.build/checks"

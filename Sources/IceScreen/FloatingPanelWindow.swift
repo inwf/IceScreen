@@ -6,6 +6,14 @@ final class FloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
+        // The custom handle overlaps AppKit's borderless-window resize area.
+        // Let the handle track its own gesture, including movement outside the panel.
+        if event.type == .leftMouseDown, event.window === self, isVisible, !ignoresMouseEvents,
+           let surface = contentView as? PanelSurface,
+           let handle = surface.target(atWindowPoint: event.locationInWindow) as? PanelResizeHandle {
+            handle.mouseDown(with: event)
+            return
+        }
         if let surface = contentView as? PanelSurface, let owner = surface.owner {
             if event.type == .magnify {
                 owner.magnify(with: event)

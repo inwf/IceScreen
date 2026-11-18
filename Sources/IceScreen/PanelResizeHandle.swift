@@ -36,9 +36,15 @@ final class PanelResizeHandle: NSControl {
         let visible = window.screen?.visibleFrame
         let minimum = max(window.minSize.width, window.minSize.height * ratio)
         let maximum = visible.map { max(minimum, min($0.maxX - original.minX, (original.maxY - $0.minY) * ratio)) }
+        #if PANEL_EVENT_DIAGNOSTICS
+        print("Resize tracking began at \(origin) widthLimits=\(minimum)...\(maximum ?? .infinity)")
+        #endif
         owner?.beginHandleResize()
         defer { owner?.endHandleResize() }
         window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: 0.1, mode: .eventTracking) { next, stop in
+            #if PANEL_EVENT_DIAGNOSTICS
+            print("Resize tracking event=\(String(describing: next?.type)) location=\(String(describing: next?.locationInWindow)) visible=\(window.isVisible) ignoresMouse=\(window.ignoresMouseEvents)")
+            #endif
             guard window.isVisible, !window.ignoresMouseEvents else { stop.pointee = true; return }
             guard let next else {
                 if NSEvent.pressedMouseButtons & 1 == 0 { stop.pointee = true }

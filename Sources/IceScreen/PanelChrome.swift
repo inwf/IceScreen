@@ -163,7 +163,7 @@ struct PanelChrome: View {
         if let message = state.value.message {
             let frame = state.messageLayout(in: size).message
             if frame.height >= 20 {
-                PanelMessage(message: message, style: .status)
+                PanelStatusMessage(message: message)
                     .frame(width: frame.width, height: frame.height)
                     .position(x: frame.midX, y: frame.midY)
             }
@@ -181,7 +181,9 @@ struct PanelChrome: View {
     }
 
     @ViewBuilder private func control(_ action: PanelAction) -> some View {
-        if action == .seek, let snapshot = state.value.media {
+        if action == .returnSource {
+            PanelReturnButton(title: action.label) { state.perform?(action) }
+        } else if action == .seek, let snapshot = state.value.media {
             MediaSeekControl(snapshot: snapshot, seek: { state.seek?($0) }, editing: { state.seeking?($0) })
         } else if action == .resize {
             if #available(macOS 26.0, *) {
@@ -197,7 +199,7 @@ struct PanelChrome: View {
             button(action)
                 .buttonStyle(.glass(.clear.interactive()))
                 .buttonSizing(.flexible)
-                .buttonBorderShape(action == .frameRate || action == .threshold || action == .returnSource ? .capsule : .circle)
+                .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
                 .glassEffectID(action, in: glassNamespace)
                 .glassEffectTransition(.materialize)
         } else {
@@ -242,7 +244,7 @@ struct PanelChrome: View {
                 .foregroundStyle(state.value.detection ? detectionColor : .secondary)
                 .frame(width: 14, height: 14)
                 .symbolEffect(.pulse, options: .repeating, isActive: state.value.idle && !reduceMotion)
-        case .resize:
+        case .resize, .returnSource:
             EmptyView()
         case .playPause:
             Image(systemName: state.value.media?.playing == true ? "pause.fill" : "play.fill").font(.system(size: 12))
@@ -252,9 +254,38 @@ struct PanelChrome: View {
             Image(systemName: "forward.end.fill").font(.system(size: 12))
         case .seek:
             EmptyView()
-        case .returnSource:
-            Text(L10n.text("返回来源窗口", "Return to source")).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.8)
         }
+    }
+}
+
+private struct PanelReturnButton: NSViewRepresentable {
+    let title: String
+    let perform: () -> Void
+
+    final class Button: NSButton {
+        var onPress: (() -> Void)?
+        @objc func press() { onPress?() }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override var needsPanelToBecomeKey: Bool { false }
+    }
+    func makeNSView(context: Context) -> Button {
+        let button = Button(title: title, target: nil, action: #selector(Button.press))
+        button.target = button
+        button.font = .systemFont(ofSize: 12)
+        button.refusesFirstResponder = true
+        button.setAccessibilityIdentifier("panel.returnSource")
+        if #available(macOS 26.0, *) {
+            button.bezelStyle = .glass
+            button.borderShape = .capsule
+        } else {
+            button.bezelStyle = .rounded
+        }
+        return button
+    }
+    func updateNSView(_ button: Button, context: Context) {
+        button.title = title
+        button.toolTip = title
+        button.onPress = perform
     }
 }
 

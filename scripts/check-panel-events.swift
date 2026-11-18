@@ -16,14 +16,29 @@ enum PanelEventChecks {
             runForegroundFixture(application)
             return
         }
-        precondition(CommandLine.arguments.count == 4, "Pass the foreground application path, completion file, and project directory.")
+        precondition(CommandLine.arguments.count == 5, "Pass the foreground application path, completion file, project directory, and check group.")
         precondition(FileManager.default.changeCurrentDirectoryPath(CommandLine.arguments[3]),
                      "The native checks require the project working directory.")
         application.setActivationPolicy(.accessory)
         application.finishLaunching()
         guard let screen = NSScreen.main else { fatalError("Panel checks require an active macOS graphical session.") }
-        checkBackgroundPanels(application, screen: screen)
-        application.activate(ignoringOtherApps: true)
+        let group = CommandLine.arguments[4]
+        if group != "background" { application.activate(ignoringOtherApps: true) }
+        switch group {
+        case "background": checkBackgroundPanels(application, screen: screen)
+        case "controls": checkPanelControls(on: screen)
+        case "resize": checkCornerResize(on: screen)
+        case "capture": checkCaptureDetection()
+        case "transition": checkPreviewTransition(in: screen.visibleFrame)
+        case "appearance": checkAppearancePreview(in: screen.visibleFrame)
+        case "language": checkLanguageSettings()
+        case "settings": checkSettingsResourceLifetime()
+        default: fatalError("Unknown panel check group \(group)")
+        }
+        try! "passed\n".write(toFile: CommandLine.arguments[2], atomically: true, encoding: .utf8)
+    }
+
+    @MainActor private static func checkPanelControls(on screen: NSScreen) {
         let frame = NSRect(x: screen.visibleFrame.midX - 90, y: screen.visibleFrame.midY - 70, width: 180, height: 140)
         let lower = makePanel(frame)
         let upper = makePanel(frame.offsetBy(dx: 20, dy: 20))
@@ -55,13 +70,7 @@ enum PanelEventChecks {
         precondition(PanelHitTesting.frontmost(at: NSPoint(x: frame.minX - 20, y: frame.minY - 20), among: panels) == nil,
                      "Typing outside a panel must remain unaffected.")
         checkSurface(in: lower)
-        checkCaptureDetection()
-        checkPreviewTransition(in: screen.visibleFrame)
-        checkAppearancePreview(in: screen.visibleFrame)
-        checkLanguageSettings()
-        checkSettingsResourceLifetime()
         print("Passed 5 native NSPanel hit-testing checks.")
-        try! "passed\n".write(toFile: CommandLine.arguments[2], atomically: true, encoding: .utf8)
     }
 
     @MainActor private static func runForegroundFixture(_ application: NSApplication) {
@@ -84,6 +93,20 @@ enum PanelEventChecks {
             precondition(Date() < deadline, message)
             autoreleasepool { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         }
+    }
+
+    // These checks run from main(), outside NSApplication.run(). Dispatch the
+    // queued WindowServer events that drive window exposure and occlusion.
+    @MainActor private static func processWindowEvents(for seconds: TimeInterval) {
+        let until = Date().addingTimeInterval(seconds)
+        repeat {
+            autoreleasepool {
+                if let event = NSApp.nextEvent(matching: .any, until: until, inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+                NSApp.updateWindows()
+            }
+        } while Date() < until
     }
 
     @MainActor private static func checkBackgroundPanels(_ application: NSApplication, screen: NSScreen) {
@@ -177,13 +200,37 @@ enum PanelEventChecks {
         print("Passed background WindowServer ordering, mouse-through, hiding, AppKit first-click dispatch, and foreground PID preservation checks.")
     }
 
-    @MainActor private static func accessibilityElement(_ object: Any, identifier: String, depth: Int = 0) -> (any NSAccessibilityProtocol)? {
-        guard depth < 20, let element = object as? any NSAccessibilityProtocol else { return nil }
-        if element.accessibilityIdentifier() == identifier { return element }
-        for child in element.accessibilityChildren() ?? [] {
-            if let result = accessibilityElement(child, identifier: identifier, depth: depth + 1) { return result }
-        }
-        return nil
+    @MainActor private static func renderedAXFrame(in host: NSView, identifier: String) -> NSRect {
+        let deadline = Date().addingTimeInterval(10)
+        var tree: [String] = []
+        repeat {
+            host.layoutSubtreeIfNeeded()
+            var queue: [AnyObject] = [host]
+            var visited = Set<ObjectIdentifier>()
+            var index = 0
+            tree.removeAll(keepingCapacity: true)
+            while index < queue.count {
+                let node = queue[index]
+                index += 1
+                guard visited.insert(ObjectIdentifier(node)).inserted else { continue }
+                let full = node as? any NSAccessibilityProtocol
+                let basic = node as? any NSAccessibilityElementProtocol
+                let id = full?.accessibilityIdentifier() ?? basic?.accessibilityIdentifier?()
+                let frame = full?.accessibilityFrame() ?? basic?.accessibilityFrame()
+                if let frame, id == identifier, !frame.isEmpty { return frame }
+                if tree.count < 80 {
+                    tree.append("\(type(of: node)) id=\(id ?? "-") frame=\(frame.map(NSStringFromRect) ?? "-")")
+                }
+                // SwiftUI's navigation children need only conform to NSAccessibilityElementProtocol.
+                // Also visit AppKit hosts which are skipped as elements in the accessibility hierarchy.
+                queue += (full?.accessibilityChildrenInNavigationOrder() ?? []).map { $0 as AnyObject }
+                queue += (full?.accessibilityChildren() ?? []).map { $0 as AnyObject }
+                if let view = node as? NSView { queue += view.subviews.filter { !$0.isHiddenOrHasHiddenAncestor } }
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        } while Date() < deadline
+        print("AX lookup failed for \(identifier), window=\(host.window?.windowNumber ?? -1), visible=\(host.window?.isVisible == true), host=\(host.frame)\n" + tree.joined(separator: "\n"))
+        preconditionFailure("Missing on-screen accessibility element: \(identifier)")
     }
 
     @MainActor private static func checkHintPlacement(in source: FloatingPanel, assertBackground: () -> Void) {
@@ -199,10 +246,7 @@ enum PanelEventChecks {
                          "Hints must remain mouse-through and nonactivating.")
             precondition(PanelHitTesting.frontmost(at: NSPoint(x: source.frame.midX, y: source.frame.midY), among: [source]) === source,
                          "The hint must leave WindowServer hit testing on its source.")
-            wait("The actual hint accessibility element must be available.") {
-                accessibilityElement(host, identifier: "panel.hint") != nil
-            }
-            let rendered = accessibilityElement(host, identifier: "panel.hint")!.accessibilityFrame()
+            let rendered = renderedAXFrame(in: host, identifier: "panel.hint")
             precondition(abs(rendered.midX - source.frame.midX) < 2 && abs(rendered.midY - source.frame.midY) < 2,
                          "The rendered hint must be centered over its source: \(rendered), source: \(source.frame).")
             precondition(source.frame.insetBy(dx: -1, dy: -1).contains(rendered), "The rendered hint must fit inside the source.")
@@ -210,7 +254,8 @@ enum PanelEventChecks {
         }
         for message in ["自动隐藏已开启", "自动隐藏已关闭", "Auto-hide enabled", "Auto-hide disabled",
                         "无法调整来源进度，请检查系统设置中的自动化权限。", "Unable to seek in the source. Check Automation permission in System Settings."] {
-            presenter.show(message, over: source)
+            // Placement and multi-screen checks own the fixture lifetime, independent of dismissal.
+            presenter.show(message, over: source, duration: 120)
             settle()
             checkCentered()
         }
@@ -368,8 +413,10 @@ enum PanelEventChecks {
         let window = NSWindow(contentRect: NSRect(x: screen.midX - 220, y: screen.midY - 110, width: 440, height: 220),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let preview = AppearancePreviewView(frame: NSRect(x: 0, y: 0, width: 440, height: 220))
-        window.contentView = preview
+        let controller = AppearancePreviewController()
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 440, height: 220))
+        let preview = controller.preview
         defer { preview.releasePreview(); window.close() }
         var preferences = Preferences()
         preferences.cornerRadius = 30
@@ -379,27 +426,39 @@ enum PanelEventChecks {
         preferences.sharpnessStrength = 0.81
         preferences.hoverBlur = 0.8
         var rendered = false
+        func waitForPreview(_ stage: String) {
+            let deadline = ProcessInfo.processInfo.systemUptime + 10
+            while !rendered {
+                let view = preview.surface.frameView
+                precondition(view.renderFailure == nil && ProcessInfo.processInfo.systemUptime < deadline,
+                             "\(stage): \(view.renderingState), preview=\(preview.bounds), surface=\(preview.surface.frame), hidden=\(preview.isHiddenOrHasHiddenAncestor), occlusion=\(window.occlusionState.rawValue)")
+                processWindowEvents(for: 0.02)
+            }
+        }
         preview.surface.frameView.onFirstFrameRendered = { rendered = true }
         preview.update(preferences, original: false, dark: false)
         preview.layoutSubtreeIfNeeded()
         settle()
         precondition(!rendered && !window.isVisible, "Prepare the static sample while its window is still hidden.")
         window.orderFrontRegardless()
-        wait("Ordering in the preloaded preview must render its sample without a tab change.") { rendered }
+        waitForPreview("Ordering in the preloaded preview must render its sample without a tab change")
 
-        window.orderOut(nil)
-        settle()
-        rendered = false
-        preview.surface.frameView.onFirstFrameRendered = { rendered = true }
-        window.orderFrontRegardless()
-        wait("Reopening the same preview must repaint its cached sample.") { rendered }
+        for cycle in 1...2 {
+            window.orderOut(nil)
+            processWindowEvents(for: 0.1)
+            precondition(!window.isVisible && preview.window === window)
+            rendered = false
+            preview.surface.frameView.onFirstFrameRendered = { rendered = true }
+            window.orderFrontRegardless()
+            waitForPreview("Reopening the same preview must repaint its cached sample (cycle \(cycle))")
+        }
 
         preview.isHidden = true
         settle()
         rendered = false
         preview.surface.frameView.onFirstFrameRendered = { rendered = true }
         preview.isHidden = false
-        wait("Revealing the preview tab must repaint its static frame.") { rendered }
+        waitForPreview("Revealing the preview tab must repaint its static frame")
         precondition(preview.surface.layer!.cornerRadius == 30 && abs(preview.surface.alphaValue - 0.4) < 0.001)
         precondition(preview.surface.frameView.layer!.cornerRadius == 30 && preview.surface.frameView.layer!.masksToBounds,
                      "The preview image must retain the requested corner clipping.")
@@ -660,10 +719,7 @@ enum PanelEventChecks {
             chrome.state.value.message = message
             chrome.state.value.stageInactive = false
             settle()
-            wait("The actual status accessibility element must be available.") {
-                accessibilityElement(chrome, identifier: "panel.status") != nil
-            }
-            let rendered = accessibilityElement(chrome, identifier: "panel.status")!.accessibilityFrame()
+            let rendered = renderedAXFrame(in: chrome, identifier: "panel.status")
             precondition(abs(rendered.midX - panel.frame.midX) < 2 && abs(rendered.midY - panel.frame.midY) < 2,
                          "Status text must render at the panel center.")
             for size in [CGSize(width: 180, height: 140), CGSize(width: 360, height: 240)] {
@@ -675,11 +731,8 @@ enum PanelEventChecks {
                 precondition(layout.message.union(action).midY == size.height / 2)
             }
             settle()
-            wait("The actual return button accessibility element must be available.") {
-                accessibilityElement(chrome, identifier: "panel.returnSource") != nil
-            }
-            let statusFrame = accessibilityElement(chrome, identifier: "panel.status")!.accessibilityFrame()
-            let actionFrame = accessibilityElement(chrome, identifier: "panel.returnSource")!.accessibilityFrame()
+            let actionFrame = renderedAXFrame(in: chrome, identifier: "panel.returnSource")
+            let statusFrame = renderedAXFrame(in: chrome, identifier: "panel.status")
             precondition(!statusFrame.intersects(actionFrame), "Rendered status text and return control must not overlap.")
             let button = chrome.state.regions(in: surface.bounds.size).first { $0.id == .returnSource }!.frame
             checkButton(button.midX, button.midY, .returnSource)
@@ -737,20 +790,6 @@ enum PanelEventChecks {
         precondition(!target.isVisible, "Hiding a panel must cancel the pending click.")
         surface.setHovered(true)
         surface.layoutSubtreeIfNeeded()
-        let originalFrame = panel.frame
-        let handlePoint = NSPoint(x: 345, y: 225)
-        NSApp.postEvent(event(.leftMouseUp, at: NSPoint(x: 375, y: 245)), atStart: true)
-        NSApp.postEvent(event(.leftMouseDragged, at: NSPoint(x: 375, y: 245)), atStart: true)
-        NSApp.sendEvent(event(.leftMouseDown, at: handlePoint))
-        precondition(panel.frame.width > originalFrame.width && panel.frame.height > originalFrame.height,
-                     "Dragging the corner handle outward must enlarge the panel.")
-        precondition(abs(panel.frame.minX - originalFrame.minX) < 1 && abs(panel.frame.maxY - originalFrame.maxY) < 1,
-                     "Corner resizing must keep the top-left corner fixed.")
-        precondition(abs(panel.frame.width / panel.frame.height - originalFrame.width / originalFrame.height) < 0.01,
-                     "Corner resizing must preserve the content aspect ratio.")
-        precondition(!target.isVisible, "Resizing must not activate the content destination.")
-        panel.setFrame(originalFrame, display: true)
-        surface.layoutSubtreeIfNeeded()
         for shade in surface.subviews.compactMap({ $0 as? PanelDimView }) {
             let center = CGPoint(x: shade.bounds.midX, y: shade.bounds.midY)
             precondition(shade.subviews.allSatisfy { !$0.frame.contains(center) },
@@ -787,6 +826,79 @@ enum PanelEventChecks {
         checkButton(24, 24, .close)
         checkButton(96, 24, .detection)
         print("Passed native control targeting, first-click acceptance, compact layout, and flipped-coordinate checks.")
+    }
+
+    @MainActor private static func checkCornerResize(on screen: NSScreen) {
+        let visible = screen.visibleFrame
+        // Leave room for the entire gesture, including the final right and bottom edges.
+        let unit = floor(min(120, (visible.width - 32) / 3, (visible.height - 22) / 2))
+        let frame = NSRect(x: floor(visible.midX - (3 * unit + 30) / 2),
+                           y: floor(visible.midY - (2 * unit - 20) / 2), width: 3 * unit, height: 2 * unit)
+        let panel = makePanel(frame)
+        defer { panel.close() }
+        let surface = PanelSurface(frame: NSRect(origin: .zero, size: frame.size))
+        var contentClicks = 0
+        surface.onContentClick = { contentClicks += 1 }
+        panel.contentView = surface
+        surface.setHovered(true)
+        panel.orderFrontRegardless()
+        processWindowEvents(for: 0.1)
+        surface.layoutSubtreeIfNeeded()
+        guard let handle = surface.subviews.compactMap({ $0 as? PanelResizeHandle }).first,
+              !handle.isHidden, !handle.bounds.isEmpty else { fatalError("Missing visible resize handle.") }
+        let handlePoint = NSPoint(x: surface.bounds.maxX - 15, y: surface.bounds.maxY - 15)
+        let local = surface.convert(handlePoint, to: nil)
+        let start = panel.convertPoint(toScreen: local)
+        wait("WindowServer must target the resize fixture before the drag.") {
+            NSWindow.windowNumber(at: start, belowWindowWithWindowNumber: 0) == panel.windowNumber
+        }
+        precondition(surface.control(atWindowPoint: local) == .resize &&
+                     surface.hitTest(surface.convert(handlePoint, to: surface.superview)) === handle,
+                     "The drag must start on the native resize handle.")
+        let original = panel.frame
+        let end = NSPoint(x: start.x + 30, y: start.y - 20)
+        let expected = NSRect(x: original.minX, y: original.minY - 20,
+                              width: original.width + 30, height: original.height + 20)
+        print("Resize window \(panel.windowNumber) frame=\(original) visibleFrame=\(visible) handle=\(handle.frame)")
+        precondition(visible.contains(expected), "The resize fixture must have space to grow.")
+        @MainActor func event(_ type: NSEvent.EventType, at screenPoint: NSPoint) -> NSEvent {
+            let point = panel.convertPoint(fromScreen: screenPoint)
+            print("Resize \(type) screen=\(screenPoint) window=\(point) frame=\(panel.frame)")
+            return NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                                      context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+        }
+        let down = event(.leftMouseDown, at: start)
+        NSApp.postEvent(event(.leftMouseDragged, at: end), atStart: true)
+        // A resize moves the window's bottom edge. Construct the release from its screen
+        // point while tracking, after the drag has changed the window coordinate system.
+        var frameBeforeRelease: NSRect?
+        @MainActor func postRelease() {
+            guard frameBeforeRelease == nil else { return }
+            frameBeforeRelease = panel.frame
+            NSApp.postEvent(event(.leftMouseUp, at: end), atStart: true)
+        }
+        let observer = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification,
+                                                             object: panel, queue: nil) { _ in
+            MainActor.assumeIsolated { if panel.frame != original { postRelease() } }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        // Also end tracking if the event was misrouted and the window never grew.
+        let fallback = Timer(timeInterval: 0.05, repeats: false) { _ in MainActor.assumeIsolated { postRelease() } }
+        RunLoop.main.add(fallback, forMode: .eventTracking)
+        NSApp.sendEvent(down)
+        fallback.invalidate()
+        print("Resize before release=\(String(describing: frameBeforeRelease)) final=\(panel.frame) expected=\(expected) contentClicks=\(contentClicks)")
+        precondition((frameBeforeRelease?.width ?? 0) > original.width && (frameBeforeRelease?.height ?? 0) > original.height,
+                     "Dragging the corner handle outward must enlarge the panel before release.")
+        precondition(abs(panel.frame.width - expected.width) < 1 && abs(panel.frame.height - expected.height) < 1,
+                     "Releasing at the same screen point must preserve the dragged size.")
+        precondition(abs(panel.frame.minX - original.minX) < 1 && abs(panel.frame.maxY - original.maxY) < 1,
+                     "Corner resizing must keep the top-left corner fixed.")
+        precondition(abs(panel.frame.width / panel.frame.height - original.width / original.height) < 0.01,
+                     "Corner resizing must preserve the content aspect ratio.")
+        precondition(contentClicks == 0, "Resizing must not activate the content destination.")
+        print("Passed native corner resize tracking, release, anchoring, aspect ratio, and input isolation checks.")
     }
 
     @MainActor private static func makePanel(_ frame: NSRect) -> FloatingPanel {

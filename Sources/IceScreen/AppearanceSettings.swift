@@ -155,17 +155,35 @@ struct DefaultValueSlider: View {
     }
 }
 
-struct AppearancePreview: NSViewRepresentable {
+struct AppearancePreview: NSViewControllerRepresentable {
     let preferences: Preferences
     let original: Bool
     let image: AppearanceImage?
     @Environment(\.colorScheme) private var colorScheme
 
-    func makeNSView(context: Context) -> AppearancePreviewView { AppearancePreviewView(frame: .zero) }
-    func updateNSView(_ view: AppearancePreviewView, context: Context) {
-        view.update(preferences, original: original, dark: colorScheme == .dark, image: image)
+    func makeNSViewController(context: Context) -> AppearancePreviewController { AppearancePreviewController() }
+    func updateNSViewController(_ controller: AppearancePreviewController, context: Context) {
+        controller.preview.update(preferences, original: original, dark: colorScheme == .dark, image: image)
     }
-    static func dismantleNSView(_ view: AppearancePreviewView, coordinator: ()) { view.releasePreview() }
+    static func dismantleNSViewController(_ controller: AppearancePreviewController, coordinator: ()) {
+        controller.preview.releasePreview()
+    }
+}
+
+@MainActor
+final class AppearancePreviewController: NSViewController {
+    let preview = AppearancePreviewView(frame: .zero)
+
+    override func loadView() { view = preview }
+
+    // AppKit also calls this when the same controller's window is ordered back in.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        #if PANEL_EVENT_DIAGNOSTICS
+        print("Appearance preview did appear, windowVisible=\(view.window?.isVisible == true)")
+        #endif
+        preview.scheduleVisibleRefresh()
+    }
 }
 
 @MainActor
@@ -178,6 +196,8 @@ final class AppearancePreviewView: NSView {
     private var preferences = Preferences()
     private var tracking: NSTrackingArea?
     private var refreshScheduled = false
+    private static let visibilityNotifications = [NSWindow.didChangeOcclusionStateNotification,
+                                                 NSWindow.didBecomeKeyNotification, NSWindow.didExposeNotification]
     private(set) var pointerInside = false
 
     override init(frame: NSRect) {
@@ -216,6 +236,7 @@ final class AppearancePreviewView: NSView {
         let oldSize = surface.frame.size
         surface.frame = CGRect(x: (bounds.width - width) / 2, y: (bounds.height - width / ratio) / 2,
                                width: width, height: width / ratio)
+        if surface.frame.size != oldSize { surface.needsLayout = true }
         surface.layoutSubtreeIfNeeded()
         updateTrackingAreas()
         if surface.frame.size != oldSize { scheduleVisibleRefresh() }
@@ -223,8 +244,9 @@ final class AppearancePreviewView: NSView {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if let window {
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: window)
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: window)
+            for name in Self.visibilityNotifications {
+                NotificationCenter.default.removeObserver(self, name: name, object: window)
+            }
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -232,7 +254,7 @@ final class AppearancePreviewView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window else { setPointerInside(false); return }
-        for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification] {
+        for name in Self.visibilityNotifications {
             NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged(_:)),
                                                    name: name, object: window)
         }
@@ -245,18 +267,20 @@ final class AppearancePreviewView: NSView {
     }
 
     @objc private func windowVisibilityChanged(_ notification: Notification) {
+        if notification.name == NSWindow.didChangeOcclusionStateNotification,
+           window?.occlusionState.contains(.visible) != true { return }
         scheduleVisibleRefresh()
     }
 
     // A static sample has no next capture frame to repaint it after AppKit orders the window in.
-    private func scheduleVisibleRefresh() {
+    fileprivate func scheduleVisibleRefresh() {
         guard !refreshScheduled else { return }
         refreshScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.refreshScheduled = false
             guard self.sample != nil, let window = self.window, window.isVisible,
-                  window.occlusionState.contains(.visible), !self.isHiddenOrHasHiddenAncestor else { return }
+                  !self.isHiddenOrHasHiddenAncestor else { return }
             self.layoutSubtreeIfNeeded()
             self.updatePointerPosition(in: window)
             self.surface.frameView.redraw()

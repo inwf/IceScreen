@@ -30,10 +30,6 @@ struct PanelMessage: View {
                 label.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(message)
-        .accessibilityIdentifier(style == .hint ? "panel.hint" : "panel.status")
-        .accessibilityAddTraits(.updatesFrequently)
         .help(message)
     }
 
@@ -49,6 +45,38 @@ struct PanelMessage: View {
                 .padding(.vertical, verticalPadding)
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
                 .clipped()
+        }
+    }
+}
+
+/// This view draws one message. Expose that same view and its actual bounds as a static-text AX leaf.
+final class PanelMessageHost: NSHostingView<PanelMessage> {
+    override var isOpaque: Bool { false }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
+    override func accessibilityIdentifier() -> String { rootView.style == .hint ? "panel.hint" : "panel.status" }
+    override func accessibilityLabel() -> String? { rootView.message }
+    override func accessibilityValue() -> Any? { rootView.message }
+    override func accessibilityChildren() -> [Any]? { [] }
+    override func accessibilityChildrenInNavigationOrder() -> [any NSAccessibilityElementProtocol]? { [] }
+
+    required init(rootView: PanelMessage) {
+        super.init(rootView: rootView)
+        sizingOptions = []
+        safeAreaRegions = []
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+}
+
+struct PanelStatusMessage: NSViewRepresentable {
+    let message: String
+    func makeNSView(context: Context) -> PanelMessageHost {
+        PanelMessageHost(rootView: PanelMessage(message: message, style: .status))
+    }
+    func updateNSView(_ view: PanelMessageHost, context: Context) {
+        if view.rootView.message != message {
+            view.rootView = PanelMessage(message: message, style: .status)
+            NSAccessibility.post(element: view, notification: .valueChanged)
         }
     }
 }

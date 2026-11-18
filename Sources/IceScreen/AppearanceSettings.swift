@@ -13,6 +13,7 @@ struct AppearanceSettings: View {
     private let defaults = Preferences()
 
     var body: some View {
+        let transparency = Self.percent(store.value.panelTransparency)
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -30,49 +31,49 @@ struct AppearanceSettings: View {
                 AppearancePreview(preferences: store.value, original: showOriginal, image: images.image)
                     .frame(height: 204)
                     .accessibilityLabel(L10n.text("浮窗外观示例", "Panel appearance preview"))
-                    .accessibilityValue(L10n.text("圆角 \(Int(store.value.cornerRadius)) 点，透明度 \(Int(store.value.panelOpacity * 100))%，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")", "Corner radius \(Int(store.value.cornerRadius)) points, opacity \(Int(store.value.panelOpacity * 100))%, \(showOriginal || !store.value.enhanceContrast ? "original image" : "enhanced contrast and sharpness")"))
-                Text(showOriginal ? L10n.text("正在对比原始画面 · 圆角和透明度仍按当前设置显示", "Comparing original · current corner radius and opacity still apply") : (images.image?.name ?? L10n.text("内置文字与图形示例", "Built-in text and graphics sample")))
+                    .accessibilityValue(L10n.text("圆角 \(Int(store.value.cornerRadius)) 点，普通透明度 \(transparency)，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")", "Corner radius \(Int(store.value.cornerRadius)) points, normal transparency \(transparency), \(showOriginal || !store.value.enhanceContrast ? "original image" : "enhanced contrast and sharpness")"))
+                Text(showOriginal ? L10n.text("正在对比原始画面 · 圆角和透明度仍按当前设置显示", "Comparing original · current corner radius and transparency still apply") : (images.image?.name ?? L10n.text("内置文字与图形示例", "Built-in text and graphics sample")))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Text(store.value.autoHide ? L10n.text("鼠标移入后按隐藏时透明度显示，移出后恢复。", "Hover to preview auto-hide opacity; move away to restore.") : L10n.text("鼠标移入画面预览按钮、边缘阴影和操作提示。", "Hover to preview controls, edge shading, and hints."))
+                Text(store.value.autoHide ? L10n.text("鼠标移入后按隐藏时透明度显示，移出后恢复。", "Hover to preview auto-hide transparency. Move away to restore the panel.") : L10n.text("鼠标移入画面预览按钮、边缘阴影和操作提示。", "Hover to preview controls, edge shading, and hints."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 12)
             Divider()
             Form {
-                Section(L10n.text("形状与透明度", "Shape and opacity")) {
+                Section(L10n.text("形状与透明度", "Shape and transparency")) {
                     DefaultValueSlider(id: "cornerRadius", title: L10n.text("圆角", "Corner radius"), value: $store.value.cornerRadius,
                                        range: 0...30, step: 1, defaultValue: defaults.cornerRadius,
                                        format: { "\(Int($0.rounded())) pt" })
-                    DefaultValueSlider(id: "panelOpacity", title: L10n.text("透明度", "Opacity"), value: $store.value.panelOpacity,
-                                       range: 0.35...1, step: 0.01, defaultValue: defaults.panelOpacity,
-                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                    DefaultValueSlider(id: "panelOpacity", title: L10n.text("透明度", "Transparency"), value: $store.value.panelTransparency,
+                                       range: 0...1, step: 0.01, defaultValue: defaults.panelTransparency,
+                                       format: Self.percent)
                 }
                 Section {
                     Toggle(L10n.text("增强对比度和锐度", "Enhance contrast and sharpness"), isOn: $store.value.enhanceContrast)
                     DefaultValueSlider(id: "contrastStrength", title: L10n.text("对比度强度", "Contrast"), value: $store.value.contrastStrength,
                                        range: 0...1, step: 0.01, defaultValue: defaults.contrastStrength,
-                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                                       format: Self.percent)
                         .disabled(!store.value.enhanceContrast)
                     DefaultValueSlider(id: "sharpnessStrength", title: L10n.text("锐化强度", "Sharpness"), value: $store.value.sharpnessStrength,
                                        range: 0...1, step: 0.01, defaultValue: defaults.sharpnessStrength,
-                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                                       format: Self.percent)
                         .disabled(!store.value.enhanceContrast)
                 } header: { Text(L10n.text("画面清晰度", "Image clarity")) } footer: {
                     Text(L10n.text("两项强度均可按 1% 调整。0% 保留原始效果，使用「对比原图」查看增强前后的差异。", "Adjust each strength in 1% steps. At 0%, the original image is preserved. Use Compare original to see the difference."))
                 }
                 Section {
                     Toggle(L10n.text("鼠标移入时自动隐藏", "Auto-hide on hover"), isOn: $store.value.autoHide)
-                    DefaultValueSlider(id: "autoHideOpacity", title: L10n.text("隐藏时透明度", "Hidden opacity"), value: $store.value.autoHideOpacity,
-                                       range: 0...1, step: 0.01, defaultValue: defaults.autoHideOpacity,
-                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                    DefaultValueSlider(id: "autoHideOpacity", title: L10n.text("隐藏时透明度", "Hidden transparency"), value: $store.value.autoHideTransparency,
+                                       range: 0...1, step: 0.01, defaultValue: defaults.autoHideTransparency,
+                                       format: Self.percent)
                 } header: { Text(L10n.text("自动隐藏", "Auto-hide")) } footer: {
-                    Text(L10n.text("0% 完全透明，100% 完全不透明。鼠标移入后保持穿透，移出后恢复正常透明度。双击 \(store.value.triggerModifier.display) 开启自动隐藏的浮窗也使用此设置。", "0% is fully transparent; 100% is fully opaque. The pointer passes through while hovering. Move away to restore normal opacity. This also applies when auto-hide is enabled by double-tapping \(store.value.triggerModifier.display)."))
+                    Text(L10n.text("0% 完全不透明，100% 完全透明。鼠标移入后保持穿透，移出后恢复正常透明度。双击 \(store.value.triggerModifier.display) 开启自动隐藏的浮窗也使用此设置。", "0% is fully opaque and 100% is fully transparent. The pointer passes through while hovering. Move away to restore normal transparency. This also applies when auto-hide is enabled by double-tapping \(store.value.triggerModifier.display)."))
                 }
                 Section {
                     Toggle(L10n.text("悬停时控件周围变暗", "Dim around controls on hover"), isOn: $store.value.dimOnHover)
                     DefaultValueSlider(id: "hoverBlur", title: L10n.text("边缘效果强度", "Edge shading"), value: $store.value.hoverBlur,
                                        range: 0...1, step: 0.01, defaultValue: defaults.hoverBlur,
-                                       format: { "\(Int(($0 * 100).rounded()))%" })
+                                       format: Self.percent)
                         .disabled(!store.value.dimOnHover)
                     Toggle(L10n.text("显示操作提示", "Show control hints"), isOn: $store.value.showHoverHints)
                         .help(L10n.text("鼠标移入时在左下角显示常用操作，并跟随单击定位、Space 预览和缩放状态更新。", "Show common actions in the lower left on hover. Hints follow click-to-focus, Space preview, and zoom settings."))
@@ -93,6 +94,8 @@ struct AppearanceSettings: View {
         } message: { Text(images.error ?? "") }
         .onAppear { images.restoreIfNeeded() }
     }
+
+    private static func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
 }
 
 struct DefaultValueSlider: View {
@@ -103,6 +106,7 @@ struct DefaultValueSlider: View {
     let step: Double
     let defaultValue: Double
     let format: (Double) -> String
+    @Environment(\.locale) private var locale
 
     private var sliderValue: Binding<Double> {
         Binding(get: { value }, set: { proposed in
@@ -113,7 +117,10 @@ struct DefaultValueSlider: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(title).frame(width: L10n.language == .english ? 112 : 84, height: 22, alignment: .leading)
+            Text(title)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: locale == AppLanguage.english.locale ? 124 : 84, alignment: .leading)
+                .frame(minHeight: 22, alignment: .leading)
             VStack(spacing: 0) {
                 Slider(value: sliderValue, in: range) { Text(title) }
                     .labelsHidden()

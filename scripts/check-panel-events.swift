@@ -441,7 +441,7 @@ enum PanelEventChecks {
         defer { preview.releasePreview(); window.close() }
         var preferences = Preferences()
         preferences.cornerRadius = 30
-        preferences.panelOpacity = 0.4
+        preferences.panelTransparency = 0.6
         preferences.enhanceContrast = true
         preferences.contrastStrength = 0.37
         preferences.sharpnessStrength = 0.81
@@ -508,12 +508,12 @@ enum PanelEventChecks {
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         precondition(preview.surface.alphaValue == 0, "Auto-hide must hide the entire sample under the pointer.")
         precondition(!preview.trackingAreas.isEmpty, "The stationary parent must retain hover tracking while the sample is invisible.")
-        for opacity in [0.28, 1.0, 0.0, 0.15] {
-            preferences.autoHideOpacity = opacity
+        for (transparency, expectedAlpha) in [(0.72, 0.28), (0.0, 1.0), (1.0, 0.0), (0.85, 0.15)] {
+            preferences.autoHideTransparency = transparency
             preview.update(preferences, original: false, dark: false)
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-            precondition(abs(preview.surface.alphaValue - opacity) < 0.001,
-                         "Changing auto-hide opacity must immediately update the hovered preview.")
+            precondition(abs(preview.surface.alphaValue - expectedAlpha) < 0.001,
+                         "The hovered preview must render the selected transparency.")
         }
         hover(false)
         precondition(abs(preview.surface.alphaValue - 0.4) < 0.001, "Pointer exit must restore the selected opacity.")

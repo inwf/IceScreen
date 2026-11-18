@@ -51,7 +51,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.changeSeconds, 1)
         XCTAssertEqual(preferences.detectionCommandTimeout, 15)
         XCTAssertEqual(preferences.hoverBlur, 1)
-        XCTAssertEqual(preferences.panelOpacity, 0.35)
+        XCTAssertEqual(preferences.panelOpacity, 0)
     }
 
     func testEnhancementMigrationPreservesExistingAppearance() throws {
@@ -99,5 +99,31 @@ final class PreferencesTests: XCTestCase {
             preferences.normalize()
             XCTAssertEqual(preferences.autoHideOpacity, expected)
         }
+    }
+
+    func testTransparencySlidersPreserveSavedAlphaAndCoverBothEndpoints() throws {
+        XCTAssertEqual(Preferences().panelTransparency, 0)
+        XCTAssertEqual(Preferences().autoHideTransparency, 1)
+        let legacy = Data(#"{"panelOpacity":0.73,"autoHideOpacity":0.28}"#.utf8)
+        var settings = try JSONDecoder().decode(Preferences.self, from: legacy)
+        XCTAssertEqual(settings.panelTransparency, 0.27, accuracy: 0.000001)
+        XCTAssertEqual(settings.autoHideTransparency, 0.72, accuracy: 0.000001)
+        for percent in 0...100 {
+            let fraction = Double(percent) / 100
+            settings.panelTransparency = fraction
+            settings.autoHideTransparency = 1 - fraction
+            settings.normalize()
+            let data = try JSONEncoder().encode(settings)
+            let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(try XCTUnwrap(stored["panelOpacity"] as? Double), 1 - fraction, accuracy: 0.000001)
+            XCTAssertEqual(try XCTUnwrap(stored["autoHideOpacity"] as? Double), fraction, accuracy: 0.000001)
+            let restored = try JSONDecoder().decode(Preferences.self, from: data)
+            XCTAssertEqual(restored.panelTransparency, fraction, accuracy: 0.000001)
+            XCTAssertEqual(restored.autoHideTransparency, 1 - fraction, accuracy: 0.000001)
+        }
+        settings.panelTransparency = .nan
+        settings.autoHideTransparency = .infinity
+        XCTAssertEqual(settings.panelTransparency, 0)
+        XCTAssertEqual(settings.autoHideTransparency, 1)
     }
 }

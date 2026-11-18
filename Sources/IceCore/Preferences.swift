@@ -112,6 +112,21 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var autoHideOpacity: Double = 0
     public var showMenuBarIcon = true
 
+    // Settings show transparency. Saved preferences and AppKit both use opacity (alpha).
+    public var panelTransparency: Double {
+        get { 1 - panelOpacity }
+        set { panelOpacity = Self.clampedOpacity(1 - newValue, fallback: 1) }
+    }
+
+    public var autoHideTransparency: Double {
+        get { 1 - autoHideOpacity }
+        set { autoHideOpacity = Self.clampedOpacity(1 - newValue, fallback: 0) }
+    }
+
+    private static func clampedOpacity(_ opacity: Double, fallback: Double) -> Double {
+        opacity.isFinite ? min(1, max(0, opacity)) : fallback
+    }
+
     public var effectiveRegionShortcut: Shortcut? { regionShortcut ?? shortcut.regionVariant }
 
     public init() {}
@@ -206,8 +221,8 @@ public struct Preferences: Codable, Equatable, Sendable {
         hoverBlur = hoverBlur.isFinite ? min(1, max(0, hoverBlur)) : 1
         contrastStrength = contrastStrength.isFinite ? min(1, max(0, contrastStrength)) : 0.5
         sharpnessStrength = sharpnessStrength.isFinite ? min(1, max(0, sharpnessStrength)) : 0.5
-        panelOpacity = panelOpacity.isFinite ? min(1, max(0.35, panelOpacity)) : 1
-        autoHideOpacity = autoHideOpacity.isFinite ? min(1, max(0, autoHideOpacity)) : 0
+        panelOpacity = Self.clampedOpacity(panelOpacity, fallback: 1)
+        autoHideOpacity = Self.clampedOpacity(autoHideOpacity, fallback: 0)
         cornerRadius = cornerRadius.isFinite ? min(30, max(0, cornerRadius)) : 14
     }
 }

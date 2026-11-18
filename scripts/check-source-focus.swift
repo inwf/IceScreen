@@ -576,8 +576,8 @@ enum SourceFocusChecks {
                                                       foreground: NSRunningApplication) async throws {
         NativeFocusDiagnostics.step("background_auto_hide_opacity")
         var appearance = preferences
-        appearance.panelOpacity = 0.7
-        appearance.autoHideOpacity = 0.28
+        appearance.panelTransparency = 0.3
+        appearance.autoHideTransparency = 0.72
         session.applyPreferences(appearance)
         let inside = CGPoint(x: session.panel.frame.midX, y: session.panel.frame.midY)
         let outside = CGPoint(x: session.panel.frame.minX - 20, y: session.panel.frame.minY - 20)
@@ -605,22 +605,22 @@ enum SourceFocusChecks {
         try await wait("confirm_translucent_auto_hide") { rendered && abs(session.panel.alphaValue - 0.28) < 0.001 }
         try verify(0.28, hidden: true)
 
-        appearance.panelOpacity = 0.6
+        appearance.panelTransparency = 0.4
         session.applyPreferences(appearance)
         try verify(0.28, hidden: true)
-        appearance.autoHideOpacity = 0
+        appearance.autoHideTransparency = 1
         session.applyPreferences(appearance)
         try await wait("confirm_invisible_auto_hide") { session.panel.alphaValue == 0 }
         try verify(0, hidden: true)
 
         rendered = false
         session.surface.frameView.onFirstFrameRendered = { rendered = true }
-        appearance.autoHideOpacity = 0.42
+        appearance.autoHideTransparency = 0.58
         session.applyPreferences(appearance)
         try await wait("confirm_capture_after_opacity_change") { rendered && abs(session.panel.alphaValue - 0.42) < 0.001 }
         try verify(0.42, hidden: true)
         session.togglePaused()
-        appearance.autoHideOpacity = 1
+        appearance.autoHideTransparency = 0
         session.applyPreferences(appearance)
         try await wait("confirm_opaque_auto_hide") { session.panel.alphaValue == 1 }
         try require(session.paused, "Changing auto-hide opacity must preserve an explicit pause.")
@@ -633,6 +633,11 @@ enum SourceFocusChecks {
         session.toggleAutoHide()
         try await wait("confirm_opacity_after_auto_hide_disabled") { abs(session.panel.alphaValue - 0.6) < 0.001 }
         try verify(0.6, hidden: false)
+        for (transparency, expectedAlpha) in [(1.0, 0.0), (0.0, 1.0)] {
+            appearance.panelTransparency = transparency
+            session.applyPreferences(appearance)
+            try verify(expectedAlpha, hidden: false)
+        }
         print("Passed native auto-hide opacity, live rendering, preference updates, pointer exit, and mouse-through checks.")
     }
 

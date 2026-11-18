@@ -2,12 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- Both transparency sliders in Appearance now run from 0% (fully opaque) to 100% (fully transparent). The normal panel defaults to 0% and auto-hide to 100%. Upgrading preserves the appearance of existing panels.
+
 ### Fixed
 
 - Switching languages now updates all seven settings sidebar labels immediately and keeps the current page selected. Picker options and the quick capture gesture label also follow the selected language.
 - The About page displays “happy • 好朋友” in both languages.
 
 ---
+
+### 变更
+
+- 外观页的两个透明度滑块均从 0%（完全不透明）调到 100%（完全透明）。普通浮窗默认 0%，自动隐藏默认 100%。升级后保留已有浮窗的显示效果。
 
 ### 修复
 

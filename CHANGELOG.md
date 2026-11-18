@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.2.9 — 2026-11-18
 
 ### English
 
 - Added a language setting under General with Simplified Chinese and English. Changes apply immediately and persist across launches.
 - Localized settings, menus, floating-panel controls and hints, notifications, and app error messages. Existing settings retain Chinese by default.
 - Centered transient hints over their panel and kept them aligned during movement and resizing. Constrained long messages and separated status text from the return-to-source button in compact panels.
-- Release the settings window and preview caches after it has been closed for three minutes, or sooner under memory pressure. Reopening cancels cleanup and preserves preferences, shortcuts, the selected page, window position, and preview selection.
+- The settings window and its preview caches are released three minutes after closing, or sooner under memory pressure. Preferences, shortcuts, the selected page, window position, and preview selection are preserved when reopening.
+- Click a floating panel to focus its source window, then click the same panel again to return to the window you were using. This also works between two windows of the same app. Double-click to focus the source and close the panel.
+- Fixed an intermittent blank Appearance preview when opening settings or returning to the tab.
+- Added a link to the project’s GitHub repository in Settings → About.
 
 ### 中文
 
@@ -15,6 +18,9 @@
 - 设置页面、菜单、浮窗控件与操作提示、通知及应用错误信息支持双语。已有配置默认保持中文。
 - 临时提示在所属浮窗内居中显示，并跟随浮窗移动和缩放；限制长提示的显示范围，避免紧凑浮窗的状态文案与返回来源按钮重叠。
 - 设置关闭三分钟后释放窗口和预览缓存，内存压力升高时提前清理。重新打开会取消清理，保留配置、快捷键、选中的页面、窗口位置及预览选择。
+- 单击浮窗聚焦来源窗口，再单击同一浮窗即可回到刚才使用的窗口。同一应用的两个窗口也能切换。双击会聚焦来源并关闭浮窗。
+- 修复打开设置或返回「外观」页时，预览偶尔显示为空白的问题。
+- 在「设置 → 关于」中加入项目的 GitHub 仓库链接。
 
 ## 1.2.8 — 2026-11-17
 

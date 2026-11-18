@@ -177,6 +177,7 @@ final class AppearancePreviewView: NSView {
     private var imageID: UUID?
     private var preferences = Preferences()
     private var tracking: NSTrackingArea?
+    private var refreshScheduled = false
     private(set) var pointerInside = false
 
     override init(frame: NSRect) {
@@ -212,16 +213,54 @@ final class AppearancePreviewView: NSView {
         super.layout()
         let ratio = sample.map { CGFloat(CVPixelBufferGetWidth($0)) / CGFloat(CVPixelBufferGetHeight($0)) } ?? 16 / 9
         let width = max(0, min(320, bounds.width - 48, (bounds.height - 24) * ratio))
+        let oldSize = surface.frame.size
         surface.frame = CGRect(x: (bounds.width - width) / 2, y: (bounds.height - width / ratio) / 2,
                                width: width, height: width / ratio)
         surface.layoutSubtreeIfNeeded()
         updateTrackingAreas()
+        if surface.frame.size != oldSize { scheduleVisibleRefresh() }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if let window {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: window)
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil, let sample { surface.frameView.display(sample) }
-        if window == nil { setPointerInside(false) }
+        guard let window else { setPointerInside(false); return }
+        for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged(_:)),
+                                                   name: name, object: window)
+        }
+        scheduleVisibleRefresh()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        scheduleVisibleRefresh()
+    }
+
+    @objc private func windowVisibilityChanged(_ notification: Notification) {
+        scheduleVisibleRefresh()
+    }
+
+    // A static sample has no next capture frame to repaint it after AppKit orders the window in.
+    private func scheduleVisibleRefresh() {
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.refreshScheduled = false
+            guard self.sample != nil, let window = self.window, window.isVisible,
+                  window.occlusionState.contains(.visible), !self.isHiddenOrHasHiddenAncestor else { return }
+            self.layoutSubtreeIfNeeded()
+            self.updatePointerPosition(in: window)
+            self.surface.frameView.redraw()
+        }
     }
 
     override func updateTrackingAreas() {
@@ -233,6 +272,10 @@ final class AppearancePreviewView: NSView {
         let area = NSTrackingArea(rect: surface.frame, options: [.mouseEnteredAndExited, .activeAlways, .enabledDuringMouseDrag], owner: self)
         addTrackingArea(area)
         tracking = area
+        updatePointerPosition(in: window)
+    }
+
+    private func updatePointerPosition(in window: NSWindow) {
         setPointerInside(surface.frame.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
     }
 

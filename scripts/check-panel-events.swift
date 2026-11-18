@@ -370,7 +370,6 @@ enum PanelEventChecks {
         window.isReleasedWhenClosed = false
         let preview = AppearancePreviewView(frame: NSRect(x: 0, y: 0, width: 440, height: 220))
         window.contentView = preview
-        window.orderFrontRegardless()
         defer { preview.releasePreview(); window.close() }
         var preferences = Preferences()
         preferences.cornerRadius = 30
@@ -383,12 +382,24 @@ enum PanelEventChecks {
         preview.surface.frameView.onFirstFrameRendered = { rendered = true }
         preview.update(preferences, original: false, dark: false)
         preview.layoutSubtreeIfNeeded()
-        let deadline = Date().addingTimeInterval(3)
-        while !rendered {
-            precondition(preview.surface.frameView.renderFailure == nil, preview.surface.frameView.renderingState)
-            precondition(Date() < deadline, "Appearance sample must render through the real Metal renderer. \(preview.surface.frameView.renderingState)")
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
+        settle()
+        precondition(!rendered && !window.isVisible, "Prepare the static sample while its window is still hidden.")
+        window.orderFrontRegardless()
+        wait("Ordering in the preloaded preview must render its sample without a tab change.") { rendered }
+
+        window.orderOut(nil)
+        settle()
+        rendered = false
+        preview.surface.frameView.onFirstFrameRendered = { rendered = true }
+        window.orderFrontRegardless()
+        wait("Reopening the same preview must repaint its cached sample.") { rendered }
+
+        preview.isHidden = true
+        settle()
+        rendered = false
+        preview.surface.frameView.onFirstFrameRendered = { rendered = true }
+        preview.isHidden = false
+        wait("Revealing the preview tab must repaint its static frame.") { rendered }
         precondition(preview.surface.layer!.cornerRadius == 30 && abs(preview.surface.alphaValue - 0.4) < 0.001)
         precondition(preview.surface.frameView.layer!.cornerRadius == 30 && preview.surface.frameView.layer!.masksToBounds,
                      "The preview image must retain the requested corner clipping.")

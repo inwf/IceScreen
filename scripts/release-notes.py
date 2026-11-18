@@ -18,7 +18,7 @@ start = next((index for index, line in enumerate(lines) if line.startswith(headi
 if start is None:
     raise ValueError(f"CHANGELOG.md 缺少版本 {version} 的章节")
 end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
-notes = "\n".join(lines[start:end]).strip()
+notes = "\n".join(lines[start + 1:end]).strip()
 if not notes:
     raise ValueError(f"CHANGELOG.md 的版本 {version} 章节为空")
 print(notes)

@@ -627,17 +627,27 @@ enum PanelEventChecks {
             }
         }
 
-        let opening = PreviewPresentation(contentRect: rect, reduceMotion: false)
+        let panel = CGRect(x: screen.maxX - 120, y: screen.minY + 20, width: 96, height: 60)
+        let origin = PreviewTransitionLayout(panel: panel, previewSize: rect.size, viewport: .full)!
+        let opening = PreviewPresentation(contentRect: rect, origin: origin, reduceMotion: false)
         defer { opening.dispose() }
         opening.start()
-        precondition(!opening.isRevealed && opening.frameView.layer!.opacity == 0,
+        precondition(!opening.isRevealed && opening.clipView.layer!.opacity == 0,
                      "The preview must remain transparent until its first rendered frame.")
         opening.frameView.display(pixels)
         wait { opening.isRevealed }
         precondition(!opening.window.isKeyWindow && !opening.window.canBecomeKey,
                      "Preview animation must not acquire keyboard focus.")
-        precondition(opening.frameView.layer!.animation(forKey: "preview.spring") is CASpringAnimation,
-                     "The rendered preview must start a native spring transition.")
+        let clip = opening.clipView.layer!
+        let size = (clip.animation(forKey: "preview.bounds.size") as? CAKeyframeAnimation)?.values?.first as? NSValue
+        guard let start = size?.sizeValue,
+              let route = (clip.animation(forKey: "preview.position") as? CAKeyframeAnimation)?.values as? [NSValue],
+              route.count == 3 else {
+            preconditionFailure("The opening must travel through an overshoot point.")
+        }
+        precondition(start == panel.size && opening.window.frame.contains(panel))
+        precondition(route[1].pointValue == PreviewTransitionLayout.overshoot(from: route[0].pointValue, to: route[2].pointValue)
+                     && route[1].pointValue != route[2].pointValue, "Overshoot must follow the incoming direction.")
         let fixedFrame = opening.window.frame
         settle()
         precondition(opening.window.frame == fixedFrame && opening.frameView.bounds.size == rect.size,
@@ -645,25 +655,31 @@ enum PanelEventChecks {
         var dismissed = false
         opening.dismiss(animated: true) { dismissed = true }
         precondition(opening.window.ignoresMouseEvents, "A fading preview must immediately release mouse input.")
+        let returning = clip.animation(forKey: "preview.bounds.size") as? CABasicAnimation
+        precondition((returning?.toValue as? NSValue)?.sizeValue == panel.size,
+                     "Closing during the opening must target the original panel.")
 
-        let replacement = PreviewPresentation(contentRect: rect, reduceMotion: true)
+        let replacement = PreviewPresentation(contentRect: rect, origin: origin, reduceMotion: true)
         defer { replacement.dispose() }
         replacement.start()
         replacement.frameView.display(pixels)
-        wait { replacement.isRevealed && dismissed }
+        wait { replacement.isRevealed }
+        precondition(replacement.clipView.layer!.animation(forKey: "preview.position") == nil
+                     && replacement.clipView.layer!.animation(forKey: "preview.transform") == nil
+                     && replacement.frameView.layer!.animation(forKey: "preview.transform") == nil,
+                     "Reduced motion must reveal without changing position or scale.")
+        wait { dismissed }
         precondition(!opening.window.isVisible && replacement.window.isVisible,
                      "Completing an old dismissal must not close the new preview.")
-        precondition(replacement.frameView.layer!.animation(forKey: "preview.spring") == nil,
-                     "Reduced motion must show the preview without a spring transform.")
 
-        let cancelled = PreviewPresentation(contentRect: rect)
+        let cancelled = PreviewPresentation(contentRect: rect, origin: origin)
         cancelled.start()
         cancelled.dismiss(animated: true) {}
         cancelled.frameView.display(pixels)
         settle()
         precondition(!cancelled.window.isVisible && !cancelled.isRevealed,
                      "Cancelling before the first frame must not reveal a late preview.")
-        print("Passed native preview first-frame, spring, cancellation, replacement, and reduced-motion checks.")
+        print("Passed native preview first-frame, panel transition, cancellation, replacement, and reduced-motion checks.")
     }
 
     @MainActor private static func checkCaptureDetection() {

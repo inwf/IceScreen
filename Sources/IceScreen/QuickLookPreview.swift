@@ -66,7 +66,10 @@ final class QuickLookPreview {
         let size = CGSize(width: width, height: width / ratio)
         let rect = CGRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2,
                           width: size.width, height: size.height)
-        let transition = PreviewPresentation(contentRect: rect)
+        let thumbnail = session.surface.frameView
+        let panelRect = session.panel.convertToScreen(thumbnail.convert(thumbnail.bounds, to: nil))
+        let origin = PreviewTransitionLayout(panel: panelRect, previewSize: size, viewport: session.viewport)
+        let transition = PreviewPresentation(contentRect: rect, origin: origin)
         let view = transition.frameView
         presentation = transition
         transition.start()

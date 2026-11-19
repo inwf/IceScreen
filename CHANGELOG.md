@@ -6,6 +6,7 @@
 
 - Double-tapping the trigger modifier over a panel, choosing auto-hide from its menu, and changing the Appearance switch now update the same saved setting for all panels.
 - A single modifier tap no longer hides or restores a panel. The menu still offers temporary hiding.
+- Space previews expand from the floating panel, briefly travel past the center in the same direction, then settle back. Cropped panels reveal the full image; closing returns to the panel. Reduce Motion keeps a short fade.
 
 ---
 
@@ -13,6 +14,7 @@
 
 - 在浮窗上双击触发修饰键、使用右键菜单或更改外观设置，现在切换的是同一个自动隐藏开关，对所有浮窗生效，并在重启后保留。
 - 单击修饰键不再隐藏或恢复浮窗；仍可从菜单手动暂时隐藏浮窗。
+- 空格预览从浮窗所在位置展开，沿来路轻微越过中心再回落。裁剪区域会逐渐展开为完整画面，关闭时收回浮窗。开启「减少动态效果」时仅淡入淡出。
 
 ## 1.2.10 — 2026-11-19
 

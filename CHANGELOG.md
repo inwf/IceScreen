@@ -14,6 +14,7 @@
 ### Build and release
 
 - Release notes now group changes by category, with the complete English notes followed by Simplified Chinese.
+- The native focus check waits for temporary foreground interruptions to clear and reports the observed process and window IDs on failure.
 
 ---
 
@@ -29,6 +30,7 @@
 ### 构建与发布
 
 - 发布说明按变更类型分组，先列出完整英文，再列出对应的完整简体中文。
+- 原生焦点检查会等待短暂的前台干扰结束，失败时记录实际观察到的进程和窗口 ID。
 
 ## 1.2.9 — 2026-11-18
 

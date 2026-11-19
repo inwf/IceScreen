@@ -16,7 +16,8 @@ for source in Sources/IceScreen/*.swift; do
 done
 swiftc -parse-as-library -I .build/focus-checks -L .build/focus-checks -lIceCore \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-    "${app_sources[@]}" scripts/native-focus-diagnostics.swift scripts/check-source-focus.swift -o .build/focus-checks/source-focus
+    "${app_sources[@]}" Tests/IceCoreTests/Support/RestoredFocusSample.swift \
+    scripts/native-focus-diagnostics.swift scripts/check-source-focus.swift -o .build/focus-checks/source-focus
 codesign --force --sign - .build/focus-checks/libIceCore.dylib
 for fixture in Checks Source Other; do
     bundle="$PWD/.build/focus-checks/$fixture.app"

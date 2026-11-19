@@ -507,15 +507,24 @@ enum SourceFocusChecks {
                                                 target: AXUIElement, frame: CGRect, spaces: [UInt64],
                                                 session: CaptureSession, panelVisible: Bool = true) async throws {
         try await wait("verify_exact_source_state") {
-            let focusedID = try WindowActivation.windowID(of: focusedWindow(application))
+            let front = NSWorkspace.shared.frontmostApplication
+            let active = application.isActive
+            let hidden = application.isHidden
+            @MainActor func readFocusedID() throws -> CGWindowID? { try WindowActivation.windowID(of: focusedWindow(application)) }
+            // When a system app is in front, AX focus in the target app is diagnostic only.
+            let focusedID = active && !hidden && front?.processIdentifier == application.processIdentifier
+                ? try readFocusedID() : try? readFocusedID()
+            let sample = RestoredFocusSample(frontmostPID: front?.processIdentifier, frontmostBundle: front?.bundleIdentifier,
+                                             active: active, hidden: hidden, focusedWindowID: focusedID)
+            switch sample.verdict(expectedPID: application.processIdentifier, windowID: source.windowID) {
+            case let .pending(details): throw SourceFocusPending(operation: details)
+            case let .wrongWindow(details): throw RequestError.message("Source returned to the wrong window: \(details)")
+            case .confirmed: break
+            }
             let currentFrame = try windowFrame(target)
             let minimized = try isMinimized(target)
             let currentSpaces = try WindowActivation.spaceIDs(for: source.windowID)
             let visibleSpace = try WindowActivation.isOnVisibleSpace(source.windowID)
-            try require(application.isActive && !application.isHidden
-                        && NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier,
-                        "Source focus completed without the expected foreground application.")
-            try require(focusedID == source.windowID, "Source focus completed on window \(focusedID ?? 0); expected \(source.windowID).")
             try require(!minimized && isOnScreen(source.windowID) && visibleSpace,
                         "The exact source window must be restored and visible on the current Space.")
             try require(currentFrame == frame && Set(currentSpaces) == Set(spaces),

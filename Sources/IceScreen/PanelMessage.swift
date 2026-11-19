@@ -6,6 +6,13 @@ struct PanelMessage: View {
     enum Style { case hint, status }
     let message: String
     let style: Style
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    init(message: String, style: Style) {
+        self.message = message
+        self.style = style
+    }
 
     static func size(for message: String, width: CGFloat, style: Style) -> CGSize {
         let font = NSFont.systemFont(ofSize: style == .hint ? 13 : 12, weight: .medium)
@@ -21,11 +28,19 @@ struct PanelMessage: View {
 
     var body: some View {
         Group {
-            if style == .status {
+            if #available(macOS 26.0, *) {
+                let shape = RoundedRectangle(cornerRadius: style == .hint ? 16 : 8)
+                if reduceTransparency || contrast == .increased {
+                    label.foregroundStyle(.primary)
+                        .background(Color(nsColor: .windowBackgroundColor), in: shape)
+                } else {
+                    label.foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.85), radius: 1, y: 0.5)
+                        .glassEffect(.clear, in: shape)
+                }
+            } else if style == .status {
                 label.foregroundStyle(.white)
                     .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
-            } else if #available(macOS 26.0, *) {
-                label.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
             } else {
                 label.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
             }

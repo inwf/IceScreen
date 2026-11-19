@@ -48,7 +48,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let created = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 820, height: 640),
                                    styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                    backing: .buffered, defer: false)
-            created.backgroundColor = .windowBackgroundColor
+            if #unavailable(macOS 26.0) { created.backgroundColor = .windowBackgroundColor }
             created.toolbarStyle = .unified
             created.contentMinSize = NSSize(width: 740, height: 540)
             created.isReleasedWhenClosed = false

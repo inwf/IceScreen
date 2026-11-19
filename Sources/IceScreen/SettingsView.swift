@@ -56,7 +56,11 @@ struct SettingsView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minHeight: 540, idealHeight: 640)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            if #unavailable(macOS 26.0) {
+                Color(nsColor: .windowBackgroundColor)
+            }
+        }
         .environment(\.locale, language.locale)
         .onReceive(model.$screenPermission.removeDuplicates()) { screenPermission = $0 }
         .onReceive(model.$accessibilityPermission.removeDuplicates()) { accessibilityPermission = $0 }

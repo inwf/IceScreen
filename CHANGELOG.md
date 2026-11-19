@@ -8,6 +8,7 @@
 
 ### Changed
 
+- On macOS 26 and later, the Settings sidebar uses the system backdrop. Floating-panel hints and status messages use clear Liquid Glass, with a solid background when Reduce Transparency or Increase Contrast is enabled.
 - Double-tapping the trigger modifier over a panel, choosing auto-hide from its menu, and changing the Appearance switch now update the same saved setting for all panels.
 - A single modifier tap no longer hides or restores a panel. The menu still offers temporary hiding.
 - Space previews expand from the floating panel, briefly travel past the center in the same direction, then settle back. Cropped panels reveal the full image; closing returns to the panel. Reduce Motion keeps a short fade.
@@ -20,6 +21,7 @@
 
 ### 变更
 
+- 在 macOS 26 及以上版本，设置侧栏使用系统背景，浮窗提示和状态消息采用清透的液态玻璃。开启系统「减少透明度」或「增强对比度」后，提示改用实色背景。
 - 在浮窗上双击触发修饰键、使用右键菜单或更改外观设置，现在切换的是同一个自动隐藏开关，对所有浮窗生效，并在重启后保留。
 - 单击修饰键不再隐藏或恢复浮窗；仍可从菜单手动暂时隐藏浮窗。
 - 空格预览从浮窗所在位置展开，沿来路轻微越过中心再回落。裁剪区域会逐渐展开为完整画面，关闭时收回浮窗。开启「减少动态效果」时仅淡入淡出。

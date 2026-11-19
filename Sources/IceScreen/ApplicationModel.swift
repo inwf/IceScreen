@@ -270,7 +270,7 @@ final class ApplicationModel: ObservableObject {
                     ? try await SmartRegionCapture.detect(source: source, at: point)
                     : Viewport(rect: CGRect(x: x - 0.125, y: y - 0.125, width: 0.25, height: 0.25))
                 guard !Task.isCancelled, generation == captureGeneration || settings.value.multiWindow else { return }
-                start(source, viewport: viewport)
+                start(source, viewport: viewport, intent: .region)
             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
     }
@@ -289,26 +289,34 @@ final class ApplicationModel: ObservableObject {
                 }
                 selector.select(frame: updated.frame) { [weak self] selection in
                     guard let self, let selection, generation == self.captureGeneration else { return }
-                    self.start(updated, viewport: selection)
+                    self.start(updated, viewport: selection, intent: .region)
                 }
             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
     }
 
-    func start(_ source: SCWindow, viewport: Viewport = .full, toggleExisting: Bool = false) {
-        if let existing = sessions.first(where: { $0.source.windowID == source.windowID }) {
-            if toggleExisting, !existing.hidden { existing.close(); return }
-            existing.setViewport(viewport)
-            if existing.hidden { existing.toggleHidden() }
-            if existing.paused { existing.togglePaused() }
-            existing.panel.orderFrontRegardless()
-            return
+    func start(_ source: SCWindow, viewport: Viewport = .full, intent: PanelCaptureIntent = .window, toggleExisting: Bool = false) {
+        let multiple = settings.value.multiWindow
+        let siblings = sessions.filter { $0.source.windowID == source.windowID }
+        for existing in siblings {
+            switch intent.match(existing: existing.captureIntent, multiple: multiple, toggleExisting: toggleExisting, hidden: existing.hidden) {
+            case .ignore: continue
+            case .close: existing.close(); return
+            case .reuse:
+                existing.regionNumber = intent == .region ? (existing.regionNumber ?? 1) : nil
+                existing.setViewport(viewport)
+                if existing.hidden { existing.toggleHidden() }
+                if existing.paused { existing.togglePaused() }
+                existing.panel.orderFrontRegardless()
+                return
+            }
         }
-        if !settings.value.multiWindow { closeAll(cancelPending: false) }
+        if !multiple { closeAll(cancelPending: false) }
         let session = CaptureSession(source: source, viewport: viewport, settings: settings, offset: sessions.count)
+        if intent == .region { session.regionNumber = (siblings.compactMap(\.regionNumber).max() ?? 0) + 1 }
         session.onClose = { [weak self] value in
             guard let self else { return }
-            if self.preview.sourceID == value.source.windowID { self.preview.close() }
+            if self.preview.sessionID == value.id { self.preview.close() }
             self.detectionActions.close(value.id)
             self.sessions.removeAll { $0.id == value.id }
             if self.sessions.isEmpty { self.stopSessionMonitoring() }

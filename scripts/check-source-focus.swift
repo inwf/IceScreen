@@ -312,6 +312,36 @@ enum SourceFocusChecks {
             rejected = true
         }
         try require(rejected, "A closed source window must not be reported as focused.")
+        try await checkSiblingRegions(source: sibling, settings: settings)
+    }
+
+    @MainActor private static func checkSiblingRegions(source: SCWindow, settings: SettingsStore) async throws {
+        let previous = settings.value
+        settings.value.multiWindow = true
+        settings.value.mediaControls = false
+        let model = ApplicationModel(settings: settings)
+        defer { model.shutdown(); settings.value = previous }
+        let left = Viewport(rect: CGRect(x: 0, y: 0, width: 0.4, height: 1))
+        let right = Viewport(rect: CGRect(x: 0.6, y: 0, width: 0.4, height: 1))
+        model.start(source, viewport: left, intent: .region)
+        model.start(source, viewport: right, intent: .region)
+        try require(model.sessions.count == 2, "Two selected regions must create two panels.")
+        let a = model.sessions[0], b = model.sessions[1]
+        try await wait("confirm_both_region_streams") { a.hasCapturedFrame && b.hasCapturedFrame }
+        a.togglePaused()
+        a.resetZoom()
+        try require(a.paused && !b.paused && a.viewport == .full && b.viewport == right && a.menuTitle != b.menuTitle,
+                    "Region panels must retain independent controls and distinct menu entries.")
+        model.start(source, toggleExisting: true)
+        try require(model.sessions.count == 3, "Resetting a region zoom must not turn it into a window capture.")
+        model.start(source, toggleExisting: true)
+        try require(model.sessions.map(\.id) == [a.id, b.id], "Window capture hotkey must leave both regions intact.")
+        model.preview.show(b)
+        a.close()
+        try require(model.preview.sessionID == b.id && model.preview.isPresented && model.sessions.count == 1,
+                    "Closing one region must not dismiss its sibling's preview.")
+        b.close()
+        try require(!model.preview.isPresented && model.sessions.isEmpty, "Closing the preview owner must dismiss its preview.")
     }
 
     @MainActor private static func checkTerminalFullScreen(in directory: URL, settings: SettingsStore) async throws {

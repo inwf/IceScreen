@@ -15,14 +15,14 @@ final class QuickLookPreview {
     private weak var session: CaptureSession?
     private var mouseGlobal: Any?
     private var mouseLocal: Any?
-    private(set) var sourceID: CGWindowID?
+    private(set) var sessionID: UUID?
     var isPresented: Bool { gesture.isPresented || mediaGesture.pressedAt != nil }
     var onError: ((Error) -> Void)?
 
     func pressMedia(_ session: CaptureSession, previewEnabled: Bool) {
         close(animated: false)
         mediaSession = session
-        sourceID = session.source.windowID
+        sessionID = session.id
         mediaGesture.press(at: ProcessInfo.processInfo.systemUptime)
         guard previewEnabled else { return }
         mediaHoldTask = Task { [weak self, weak session] in
@@ -49,7 +49,7 @@ final class QuickLookPreview {
         dismissing = nil
         generation += 1
         let request = generation
-        sourceID = session.source.windowID
+        sessionID = session.id
         self.session = session
         session.beginInteraction()
         DispatchQueue.main.async { [weak self, weak session] in
@@ -109,7 +109,7 @@ final class QuickLookPreview {
         generation += 1
         gesture.close()
         pipeline?.close(); pipeline = nil
-        sourceID = nil
+        sessionID = nil
         session?.endInteraction(); session = nil
         if let mouseGlobal { NSEvent.removeMonitor(mouseGlobal); self.mouseGlobal = nil }
         if let mouseLocal { NSEvent.removeMonitor(mouseLocal); self.mouseLocal = nil }

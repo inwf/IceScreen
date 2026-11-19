@@ -11,6 +11,13 @@ import IceCore
 final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDelegate {
     private static let interactionLog = Logger(subsystem: "org.icescreen.app", category: "PanelInteraction")
     let id = UUID()
+    var regionNumber: Int?
+    var captureIntent: PanelCaptureIntent { regionNumber == nil ? .window : .region }
+    var menuTitle: String {
+        let base = appName + " — " + title
+        guard let regionNumber else { return base }
+        return base + " · " + L10n.text("区域 \(regionNumber)", "Region \(regionNumber)")
+    }
     let source: SCWindow
     let focusTarget: SourceWindowTarget
     let pipeline: CapturePipeline

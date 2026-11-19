@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- With multiple panels enabled, selecting or quick-capturing regions of the same window creates independent, numbered panels. The window capture shortcut toggles only the whole-window panel.
+
 ### Changed
 
 - Double-tapping the trigger modifier over a panel, choosing auto-hide from its menu, and changing the Appearance switch now update the same saved setting for all panels.
@@ -9,6 +13,10 @@
 - Space previews expand from the floating panel, briefly travel past the center in the same direction, then settle back. Cropped panels reveal the full image; closing returns to the panel. Reduce Motion keeps a short fade.
 
 ---
+
+### 新增
+
+- 开启多窗口模式后，可在同一窗口反复框选或快速捕获区域，生成独立编号的浮窗。整窗捕获快捷键只切换整窗浮窗。
 
 ### 变更
 

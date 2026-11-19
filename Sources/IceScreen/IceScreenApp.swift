@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !model.sessions.isEmpty {
             menu.addItem(.separator())
             for session in model.sessions {
-                let item = NSMenuItem(title: session.appName + " — " + session.title, action: nil, keyEquivalent: "")
+                let item = NSMenuItem(title: session.menuTitle, action: nil, keyEquivalent: "")
                 item.submenu = session.makeMenu()
                 menu.addItem(item)
             }

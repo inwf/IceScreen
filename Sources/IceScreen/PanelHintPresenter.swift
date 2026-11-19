@@ -7,13 +7,11 @@ import IceCore
 @MainActor
 final class PanelHintPresenter {
     private(set) var panel: NSPanel?
-    private weak var source: NSWindow?
     private var observers: [NSObjectProtocol] = []
     private var dismissal: Task<Void, Never>?
 
     func show(_ message: String, over source: NSWindow, duration: TimeInterval = 4) {
         close()
-        self.source = source
         let frame = source.contentRect(forFrameRect: source.frame)
         let window = FloatingPanel(contentRect: frame,
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -23,22 +21,24 @@ final class PanelHintPresenter {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         window.ignoresMouseEvents = true
-        window.level = .popUpMenu
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        window.level = source.level
+        window.collectionBehavior = source.collectionBehavior
         let host = PanelHintHost(message: message, size: frame.size)
         host.autoresizingMask = [.width, .height]
         window.contentView = host
         panel = window
-        for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.didChangeScreenNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: source, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.updateFrame() }
-            })
-        }
+        // AppKit moves the child with its parent; only a resize changes their relative geometry.
+        window.alphaValue = 0
+        source.addChildWindow(window, ordered: .above)
+        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: source, queue: .main) { [weak window] _ in
+            MainActor.assumeIsolated {
+                guard let window, let parent = window.parent else { return }
+                window.setFrame(parent.contentRect(forFrameRect: parent.frame), display: true)
+            }
+        })
         observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: source, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }
         })
-        window.alphaValue = 0
-        window.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
             window.animator().alphaValue = 1
@@ -55,18 +55,15 @@ final class PanelHintPresenter {
         }
     }
 
-    private func updateFrame() {
-        guard let source else { close(); return }
-        panel?.setFrame(source.contentRect(forFrameRect: source.frame), display: true)
-    }
-
     func close() {
         dismissal?.cancel()
         dismissal = nil
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
-        source = nil
-        panel?.close()
+        if let panel {
+            panel.parent?.removeChildWindow(panel)
+            panel.close()
+        }
         panel = nil
     }
 }

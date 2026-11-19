@@ -239,6 +239,7 @@ enum PanelEventChecks {
         defer { presenter.close(); source.alphaValue = 1; source.setFrame(original, display: true) }
         func checkCentered() {
             guard let hint = presenter.panel, let host = hint.contentView else { fatalError("Missing hint window.") }
+            precondition(hint.parent === source, "AppKit must move the hint together with its source during a drag.")
             host.layoutSubtreeIfNeeded()
             precondition(hint.frame == source.contentRect(forFrameRect: source.frame), "Hint host must follow the source content frame.")
             precondition(host.frame.size == hint.frame.size && !host.isOpaque, "The transparent hosting view must fill its window.")
@@ -277,7 +278,7 @@ enum PanelEventChecks {
         source.alphaValue = 0
         precondition(existing.isVisible && existing.alphaValue > 0, "Auto-hiding the source must keep its hint readable.")
         presenter.show("替换提示", over: source)
-        precondition(!existing.isVisible && presenter.panel !== existing, "A replacement must dismiss the previous hint.")
+        precondition(existing.parent == nil && !existing.isVisible && presenter.panel !== existing, "A replacement must detach and dismiss the previous hint.")
         presenter.close()
         precondition(presenter.panel == nil)
         let closing = makePanel(original)

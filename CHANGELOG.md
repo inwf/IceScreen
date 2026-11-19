@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.10 — 2026-11-19
 
 ### Changed
 
@@ -10,6 +10,10 @@
 
 - Switching languages now updates all seven settings sidebar labels immediately and keeps the current page selected. Picker options and the quick capture gesture label also follow the selected language.
 - The About page displays “happy • 好朋友” in both languages.
+
+### Build and release
+
+- Release notes now group changes by category, with the complete English notes followed by Simplified Chinese.
 
 ---
 
@@ -21,6 +25,10 @@
 
 - 切换语言后，设置侧栏的七个页面名称会立即更新，并保留当前选中的页面。选项菜单和快速捕获手势的文字也会随语言切换。
 - 关于页在两种语言下都显示「happy • 好朋友」。
+
+### 构建与发布
+
+- 发布说明按变更类型分组，先列出完整英文，再列出对应的完整简体中文。
 
 ## 1.2.9 — 2026-11-18
 

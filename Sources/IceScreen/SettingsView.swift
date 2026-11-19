@@ -256,7 +256,7 @@ struct SettingsView: View {
                     ForEach(TriggerModifier.allCases, id: \.self) { Text($0.display).tag($0) }
                 }
             } header: { Text(L10n.text("修饰键手势", "Modifier gestures")) } footer: {
-                Text(L10n.text("轻按 \(store.value.triggerModifier.display) 隐藏或恢复浮窗，双击切换自动隐藏。系统设置 → 键盘可将 fn / 地球键设为「不执行操作」。", "Tap \(store.value.triggerModifier.display) to hide or restore a panel; double-tap to toggle auto-hide. In System Settings → Keyboard, set the fn / Globe key to Do Nothing."))
+                Text(L10n.text("在浮窗上双击 \(store.value.triggerModifier.display) 切换所有浮窗的自动隐藏。系统设置 → 键盘可将 fn / 地球键设为「不执行操作」。", "Double-tap \(store.value.triggerModifier.display) over a panel to toggle auto-hide for all panels. In System Settings → Keyboard, set the fn / Globe key to Do Nothing."))
             }
             Section {
                 Toggle(L10n.text("快速捕获局部区域", "Enable quick region capture"), isOn: $store.value.quickRegionCapture)
@@ -274,7 +274,6 @@ struct SettingsView: View {
             }
             Section {
                 DisclosureGroup(L10n.text("查看浮窗操作速查", "Panel controls reference")) {
-                    instruction(L10n.text("轻按 \(store.value.triggerModifier.display)", "Tap \(store.value.triggerModifier.display)"), L10n.text("隐藏 / 恢复浮窗", "Hide / restore panel"))
                     instruction(L10n.text("双击 \(store.value.triggerModifier.display)", "Double-tap \(store.value.triggerModifier.display)"), L10n.text("切换自动隐藏", "Toggle auto-hide"))
                     instruction("Space", L10n.text("预览来源窗口；长按松开关闭", "Preview source; release after holding to close"))
                     instruction("Delete", L10n.text("关闭浮窗（透明时也有效）", "Close panel, including when transparent"))

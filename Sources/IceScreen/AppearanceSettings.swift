@@ -67,7 +67,7 @@ struct AppearanceSettings: View {
                                        range: 0...1, step: 0.01, defaultValue: defaults.autoHideTransparency,
                                        format: Self.percent)
                 } header: { Text(L10n.text("自动隐藏", "Auto-hide")) } footer: {
-                    Text(L10n.text("0% 完全不透明，100% 完全透明。鼠标移入后保持穿透，移出后恢复正常透明度。双击 \(store.value.triggerModifier.display) 开启自动隐藏的浮窗也使用此设置。", "0% is fully opaque and 100% is fully transparent. The pointer passes through while hovering. Move away to restore normal transparency. This also applies when auto-hide is enabled by double-tapping \(store.value.triggerModifier.display)."))
+                    Text(L10n.text("自动隐藏适用于所有浮窗。0% 完全不透明，100% 完全透明。鼠标移入后保持穿透，移出后恢复正常透明度。", "Auto-hide applies to all panels. 0% is fully opaque and 100% is fully transparent. The pointer passes through while hovering. Move away to restore normal transparency."))
                 }
                 Section {
                     Toggle(L10n.text("悬停时控件周围变暗", "Dim around controls on hover"), isOn: $store.value.dimOnHover)

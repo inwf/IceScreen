@@ -14,14 +14,13 @@ final class HotkeyMonitor {
     }
     var canQuickCapture: ((CGPoint) -> Bool)?
     var triggerModifier: TriggerModifier = .function {
-        didSet { functionGesture.reset(); cancelPendingTap(); flushPendingClicks() }
+        didSet { functionGesture.reset(); taps.reset(); flushPendingClicks() }
     }
     var recording = false {
-        didSet { functionGesture.reset(); cancelPendingTap(); flushPendingClicks(); onGestureReset?() }
+        didSet { functionGesture.reset(); taps.reset(); flushPendingClicks(); onGestureReset?() }
     }
     var onCapture: ((Bool) -> Void)?
     var onQuickRegion: ((CGPoint) -> Void)?
-    var onFunctionTap: (() -> Void)?
     var onFunctionDoubleTap: (() -> Void)?
     var onCloseAll: (() -> Void)?
     var onHoverAction: ((HoverAction) -> Bool)?
@@ -43,24 +42,10 @@ final class HotkeyMonitor {
         NSEvent.EventType.gesture, .magnify, .beginGesture, .endGesture
     ].map { UInt32($0.rawValue) })
     private var taps = ModifierTapSequence(interval: NSEvent.doubleClickInterval)
-    private var singleTapTask: Task<Void, Never>?
-
-    private func cancelPendingTap() {
-        singleTapTask?.cancel()
-        singleTapTask = nil
-        taps.reset()
-    }
 
     private func registerTap() {
-        singleTapTask?.cancel()
         if taps.tap(at: ProcessInfo.processInfo.systemUptime) {
             DispatchQueue.main.async { [weak self] in self?.onFunctionDoubleTap?() }
-        } else {
-            singleTapTask = Task { [weak self] in
-                guard let self else { return }
-                do { try await Task.sleep(for: .seconds(self.taps.interval)) } catch { return }
-                if self.taps.takeSingle(at: ProcessInfo.processInfo.systemUptime) { self.onFunctionTap?() }
-            }
         }
     }
 
@@ -99,7 +84,7 @@ final class HotkeyMonitor {
         functionGesture.reset()
         consumedKeys.removeAll()
         if previewKeyHeld { onSpaceCancel?(); previewKeyHeld = false }
-        cancelPendingTap()
+        taps.reset()
     }
 
     private func flushPendingClicks() {
@@ -141,7 +126,7 @@ final class HotkeyMonitor {
             functionGesture.reset()
             consumedKeys.removeAll()
             if previewKeyHeld { onSpaceCancel?(); previewKeyHeld = false }
-            cancelPendingTap()
+            taps.reset()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
         }
@@ -191,7 +176,7 @@ final class HotkeyMonitor {
         }
         if type == .leftMouseDown, triggerHeld {
             functionGesture.consume()
-            cancelPendingTap()
+            taps.reset()
         }
         if decision.consume { return true }
         let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
@@ -205,7 +190,7 @@ final class HotkeyMonitor {
         }
         guard !recording else { return false }
         if type == .flagsChanged {
-            if otherModifiers { cancelPendingTap() }
+            if otherModifiers { taps.reset() }
             if functionGesture.flagsChanged(function: triggerHeld, otherModifiers: otherModifiers,
                                             at: ProcessInfo.processInfo.systemUptime) {
                 registerTap()
@@ -214,7 +199,7 @@ final class HotkeyMonitor {
         }
         guard type == .keyDown else { return false }
         functionGesture.consume()
-        cancelPendingTap()
+        taps.reset()
         let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         if code == 53, !repeated, onEscape?() == true { consumedKeys.insert(code); return true }
         func matches(_ key: Shortcut?) -> Bool {

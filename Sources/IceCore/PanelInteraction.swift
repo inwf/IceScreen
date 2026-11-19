@@ -29,16 +29,11 @@ public struct ModifierTapSequence: Sendable {
     public private(set) var deadline: TimeInterval?
     public init(interval: TimeInterval = 0.3) { self.interval = interval }
 
-    /// 第二次轻按返回 true；首次轻按等待单击期限结束。
+    /// Only the second tap within the interval triggers an action.
     public mutating func tap(at time: TimeInterval) -> Bool {
         if let deadline, time <= deadline { self.deadline = nil; return true }
         deadline = time + interval
         return false
-    }
-    public mutating func takeSingle(at time: TimeInterval) -> Bool {
-        guard let deadline, time >= deadline else { return false }
-        self.deadline = nil
-        return true
     }
     public mutating func reset() { deadline = nil }
 }

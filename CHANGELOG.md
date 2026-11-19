@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Double-tapping the trigger modifier over a panel, choosing auto-hide from its menu, and changing the Appearance switch now update the same saved setting for all panels.
+- A single modifier tap no longer hides or restores a panel. The menu still offers temporary hiding.
+
+---
+
+### 变更
+
+- 在浮窗上双击触发修饰键、使用右键菜单或更改外观设置，现在切换的是同一个自动隐藏开关，对所有浮窗生效，并在重启后保留。
+- 单击修饰键不再隐藏或恢复浮窗；仍可从菜单手动暂时隐藏浮窗。
+
 ## 1.2.10 — 2026-11-19
 
 ### Changed

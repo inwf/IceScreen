@@ -55,10 +55,14 @@ enum SourceFocusChecks {
                 NativeFocusDiagnostics.step("verify_test_permissions")
                 try require(AXIsProcessTrusted(), "Source focus checks require Accessibility permission for this test executable.")
                 try require(CGPreflightScreenCaptureAccess(), "Source focus checks require Screen Recording permission.")
+                let suite = "org.icescreen.tests.source-focus.\(UUID().uuidString)"
+                let defaults = UserDefaults(suiteName: suite)!
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let settings = SettingsStore(defaults: defaults)
                 if arguments[3] == "terminal" {
-                    try await checkTerminalFullScreen(in: URL(fileURLWithPath: arguments[0]))
+                    try await checkTerminalFullScreen(in: URL(fileURLWithPath: arguments[0]), settings: settings)
                 } else {
-                    try await check(in: URL(fileURLWithPath: arguments[0]))
+                    try await check(in: URL(fileURLWithPath: arguments[0]), settings: settings, defaults: defaults)
                 }
                 NativeFocusDiagnostics.snapshot("passed")
                 print("Passed source focus scenario: \(arguments[3]).")
@@ -74,7 +78,7 @@ enum SourceFocusChecks {
         app.run()
     }
 
-    @MainActor private static func check(in directory: URL) async throws {
+    @MainActor private static func check(in directory: URL, settings: SettingsStore, defaults: UserDefaults) async throws {
         print("Checking cross-process focus and background floating-panel interactions.")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = ["--fixture"]
@@ -111,13 +115,11 @@ enum SourceFocusChecks {
         let capturedTarget = try await readyElement(source)
         _ = try await readyElement(other)
         _ = try await readyElement(sibling)
-        var preferences = Preferences()
-        preferences.autoHide = false
-        preferences.clickToFocus = true
+        var preferences = settings.value
         let original = try await readableFrame(capturedTarget)
         let originalSpaces = try WindowActivation.spaceIDs(for: source.windowID)
         try require(!originalSpaces.isEmpty, "The captured fixture must have an actual Space identity.")
-        let session = CaptureSession(source: source, viewport: .full, preferences: preferences, offset: 0)
+        let session = CaptureSession(source: source, viewport: .full, settings: settings, offset: 0)
         NativeFocusDiagnostics.track(session)
         defer {
             NativeFocusDiagnostics.snapshot("before_fixture_cleanup")
@@ -166,7 +168,7 @@ enum SourceFocusChecks {
         session.resetZoom()
 
         try checkScrollZoom(session, foreground: otherApp)
-        try await checkAutoHideOpacity(session, preferences: preferences, foreground: otherApp)
+        try await checkAutoHideOpacity(session, settings: settings, defaults: defaults, sibling: sibling, foreground: otherApp)
 
         try click(session, point: NSPoint(x: 24, y: session.surface.bounds.height - 24))
         print("Checking captured fixture return: PID=\(sourceApp.processIdentifier), window=\(source.windowID).")
@@ -312,7 +314,7 @@ enum SourceFocusChecks {
         try require(rejected, "A closed source window must not be reported as focused.")
     }
 
-    @MainActor private static func checkTerminalFullScreen(in directory: URL) async throws {
+    @MainActor private static func checkTerminalFullScreen(in directory: URL, settings: SettingsStore) async throws {
         print("Checking actual Terminal return from a full-screen Space.")
         let terminalConfiguration = NSWorkspace.OpenConfiguration()
         terminalConfiguration.createsNewApplicationInstance = true
@@ -349,10 +351,7 @@ enum SourceFocusChecks {
         NativeFocusDiagnostics.step("prepare_terminal_foreground")
         try await catalog.focus(source)
         print("Focused the actual Terminal window before capture.")
-        var preferences = Preferences()
-        preferences.autoHide = false
-        preferences.clickToFocus = true
-        let session = CaptureSession(source: source, viewport: .full, preferences: preferences, offset: 0)
+        let session = CaptureSession(source: source, viewport: .full, settings: settings, offset: 0)
         NativeFocusDiagnostics.track(session)
         defer {
             NativeFocusDiagnostics.snapshot("before_fixture_cleanup")
@@ -581,9 +580,10 @@ enum SourceFocusChecks {
         return entries.first { ($0[kCGWindowNumber as String] as? CGWindowID) == id }?[kCGWindowIsOnscreen as String] as? Bool == true
     }
 
-    @MainActor private static func checkAutoHideOpacity(_ session: CaptureSession, preferences: Preferences,
-                                                      foreground: NSRunningApplication) async throws {
+    @MainActor private static func checkAutoHideOpacity(_ session: CaptureSession, settings: SettingsStore,
+                                                      defaults: UserDefaults, sibling: SCWindow, foreground: NSRunningApplication) async throws {
         NativeFocusDiagnostics.step("background_auto_hide_opacity")
+        let preferences = settings.value
         var appearance = preferences
         appearance.panelTransparency = 0.3
         appearance.autoHideTransparency = 0.72
@@ -594,7 +594,7 @@ enum SourceFocusChecks {
         defer {
             session.surface.frameView.onFirstFrameRendered = nil
             if session.paused { session.togglePaused() }
-            session.autoHide = false
+            settings.value.autoHide = preferences.autoHide
             session.applyPreferences(preferences)
         }
         func verify(_ opacity: Double, hidden: Bool) throws {
@@ -610,6 +610,14 @@ enum SourceFocusChecks {
         session.surface.frameView.onFirstFrameRendered = { rendered = true }
         // 使用双击触发修饰键调用的同一个会话动作。
         session.toggleAutoHide()
+        try require(settings.value.autoHide && SettingsStore(defaults: defaults).value.autoHide,
+                    "Toggling a panel must update the saved Appearance switch.")
+        let second = CaptureSession(source: sibling, viewport: .full, settings: settings, offset: 1)
+        defer { second.close() }
+        @MainActor func hasCheckedAutoHide(_ panel: CaptureSession) -> Bool {
+            panel.makeMenu().items.first { $0.action == #selector(CaptureSession.toggleAutoHide) }?.state == .on
+        }
+        try require(second.autoHide && hasCheckedAutoHide(second), "A new panel must inherit the shared setting.")
         session.pointerMoved(to: inside)
         try await wait("confirm_translucent_auto_hide") { rendered && abs(session.panel.alphaValue - 0.28) < 0.001 }
         try verify(0.28, hidden: true)
@@ -640,6 +648,8 @@ enum SourceFocusChecks {
         session.togglePaused()
         session.pointerMoved(to: inside)
         session.toggleAutoHide()
+        try require(!settings.value.autoHide && !second.autoHide && !hasCheckedAutoHide(second),
+                    "Disabling auto-hide must also update existing panels and their menus.")
         try await wait("confirm_opacity_after_auto_hide_disabled") { abs(session.panel.alphaValue - 0.6) < 0.001 }
         try verify(0.6, hidden: false)
         for (transparency, expectedAlpha) in [(1.0, 0.0), (0.0, 1.0)] {
@@ -647,6 +657,10 @@ enum SourceFocusChecks {
             session.applyPreferences(appearance)
             try verify(expectedAlpha, hidden: false)
         }
+        settings.value.autoHide = true
+        try require(session.autoHide && second.autoHide && hasCheckedAutoHide(session),
+                    "The Appearance switch must update every panel.")
+        settings.value.autoHide = false
         print("Passed native auto-hide opacity, live rendering, preference updates, pointer exit, and mouse-through checks.")
     }
 

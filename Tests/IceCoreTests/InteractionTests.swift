@@ -133,22 +133,20 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(gesture.flagsChanged(function: false, otherModifiers: false, at: 2))
     }
 
-    func testDoubleTapDoesNotAlsoExecuteSingleTap() {
+    func testOnlyTwoTapsWithinIntervalTriggerAnAction() {
         var taps = ModifierTapSequence(interval: 0.3)
         XCTAssertFalse(taps.tap(at: 1))
-        XCTAssertFalse(taps.takeSingle(at: 1.1))
-        XCTAssertTrue(taps.tap(at: 1.2))
-        XCTAssertFalse(taps.takeSingle(at: 2))
         XCTAssertFalse(taps.tap(at: 3))
-        XCTAssertTrue(taps.takeSingle(at: 3.31))
-        XCTAssertFalse(taps.takeSingle(at: 4))
+        XCTAssertFalse(taps.tap(at: 3.31))
+        XCTAssertTrue(taps.tap(at: 3.5))
+        XCTAssertFalse(taps.tap(at: 3.6))
     }
 
     func testCancellingTapWhenStartingShortcut() {
         var taps = ModifierTapSequence()
         XCTAssertFalse(taps.tap(at: 0))
         taps.reset()
-        XCTAssertFalse(taps.takeSingle(at: 1))
+        XCTAssertFalse(taps.tap(at: 0.1))
     }
 
     func testDisablingAutoHideWhilePointerStillInsideRestoresCapture() {

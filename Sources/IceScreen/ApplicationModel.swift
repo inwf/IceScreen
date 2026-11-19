@@ -58,7 +58,6 @@ final class ApplicationModel: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var settingsSubscription: AnyCancellable?
     private var lastExternalPID: pid_t?
-    private weak var lastHidden: CaptureSession?
     private var captureGeneration = 0
     private var captureTasks: [UUID: Task<Void, Never>] = [:]
     private var selectionTask: Task<Void, Never>?
@@ -85,7 +84,6 @@ final class ApplicationModel: ObservableObject {
             self?.magnification.handle(event, at: point) ?? false
         }
         hotkeys.onGestureReset = { [weak self] in self?.magnification.reset() }
-        hotkeys.onFunctionTap = { [weak self] in self?.toggleHoveredHidden() }
         hotkeys.onFunctionDoubleTap = { [weak self] in
             guard let self, let session = self.hovered(includeHidden: true, includeAutoHidden: true) else { return }
             if session.hidden { session.toggleHidden() }
@@ -136,7 +134,6 @@ final class ApplicationModel: ObservableObject {
             if previous.mediaSpace != value.mediaSpace { self.preview.close() }
             for session in self.sessions {
                 session.applyPreferences(value)
-                if previous.autoHide != value.autoHide { session.autoHide = value.autoHide }
                 if previous.enhanceContrast != value.enhanceContrast { session.enhanced = value.enhanceContrast }
                 if previous.idleDetection != value.idleDetection { session.idleDetection = value.idleDetection }
                 if previous.changeDetection != value.changeDetection { session.changeDetection = value.changeDetection }
@@ -308,7 +305,7 @@ final class ApplicationModel: ObservableObject {
             return
         }
         if !settings.value.multiWindow { closeAll(cancelPending: false) }
-        let session = CaptureSession(source: source, viewport: viewport, preferences: settings.value, offset: sessions.count)
+        let session = CaptureSession(source: source, viewport: viewport, settings: settings, offset: sessions.count)
         session.onClose = { [weak self] value in
             guard let self else { return }
             if self.preview.sourceID == value.source.windowID { self.preview.close() }
@@ -377,14 +374,6 @@ final class ApplicationModel: ObservableObject {
             return sessions.reversed().first { $0.hidden && $0.panel.frame.contains(point) }
         }
         return nil
-    }
-
-    private func toggleHoveredHidden() {
-        if let session = hovered(includeHidden: true, includeAutoHidden: true) {
-            session.toggleHidden()
-            if session.hidden { lastHidden = session }
-        }
-        else if let lastHidden, lastHidden.hidden { lastHidden.toggleHidden() }
     }
 
     private func hoverAction(_ action: HoverAction) -> Bool {

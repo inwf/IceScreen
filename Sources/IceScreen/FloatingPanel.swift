@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Combine
 import ScreenCaptureKit
 import SwiftUI
 import OSLog
@@ -22,13 +23,12 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var hidden: Bool { visibility.manuallyHidden }
     var autoHidden: Bool { visibility.automaticallyHidden }
     @Published private(set) var idle = false
-    @Published var autoHide: Bool {
+    private let settings: SettingsStore
+    private var autoHideSubscription: AnyCancellable?
+    @Published private(set) var autoHide: Bool {
         didSet {
             pointerMoved(to: NSEvent.mouseLocation)
             updateStatus()
-            if oldValue != autoHide {
-                hint.show(autoHide ? L10n.text("自动隐藏已开启", "Auto-hide enabled") : L10n.text("自动隐藏已关闭", "Auto-hide disabled"), over: panel, duration: 1.6)
-            }
         }
     }
     @Published var idleDetection: Bool { didSet { configureDetection() } }
@@ -86,7 +86,9 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         return "\(fps) FPS · \(String(format: "%.1f", viewport.magnification))×"
     }
 
-    init(source: SCWindow, viewport: Viewport, preferences: Preferences, offset: Int) {
+    init(source: SCWindow, viewport: Viewport, settings: SettingsStore, offset: Int) {
+        self.settings = settings
+        let preferences = settings.value
         self.source = source
         self.focusTarget = SourceWindowTarget(source)
         self.sourceSize = source.frame.size
@@ -131,6 +133,9 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         surface.owner = self
         surface.onContentClick = { [weak self] in self?.clicked() }
         applyPreferences(preferences)
+        autoHideSubscription = settings.$value.map(\.autoHide).removeDuplicates().dropFirst().sink { [weak self] enabled in
+            self?.autoHide = enabled
+        }
         surface.frameView.enhanced = enhanced
         pipeline.output.mailbox.deliver = { [weak self] buffer in
             guard let self, !self.closed else { return }
@@ -420,7 +425,10 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     @objc func toggleSensitiveDetection() { sensitiveDetection.toggle() }
     @objc func toggleHoverDim() { surface.dimOnHover.toggle() }
     @objc func toggleEnhanced() { enhanced.toggle(); updateStatus() }
-    @objc func toggleAutoHide() { autoHide.toggle() }
+    @objc func toggleAutoHide() {
+        settings.value.autoHide.toggle()
+        hint.show(autoHide ? L10n.text("自动隐藏已开启", "Auto-hide enabled") : L10n.text("自动隐藏已关闭", "Auto-hide disabled"), over: panel, duration: 1.6)
+    }
     @objc func focusSource() {
         clearFocusReturn()
         requestFocus(closeAfter: false)
@@ -576,6 +584,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         focusTask?.cancel()
         guard !closed else { return }
         closed = true
+        autoHideSubscription?.cancel()
         hint.close()
         resizeTask?.cancel()
         pipeline.close()
@@ -806,7 +815,7 @@ final class PanelSurface: NSView {
     private func updateHint() {
         updateControls()
         dim.isHidden = !hovered || !dimOnHover
-        input.toolTip = (clickToFocus ? L10n.text("单击切换来源与上一个窗口 · ", "Click to switch between the source and previous window · ") : "") + L10n.text("双击返回并关闭 · 轻按 \(triggerLabel) 隐藏 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Tap \(triggerLabel) to hide · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close")
+        input.toolTip = (clickToFocus ? L10n.text("单击切换来源与上一个窗口 · ", "Click to switch between the source and previous window · ") : "") + L10n.text("双击返回并关闭 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close")
         needsLayout = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {

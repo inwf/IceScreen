@@ -85,8 +85,7 @@ final class ApplicationModel: ObservableObject {
         }
         hotkeys.onGestureReset = { [weak self] in self?.magnification.reset() }
         hotkeys.onFunctionDoubleTap = { [weak self] in
-            guard let self, let session = self.hovered(includeHidden: true, includeAutoHidden: true) else { return }
-            if session.hidden { session.toggleHidden() }
+            guard let self, let session = self.hovered(includeAutoHidden: true) else { return }
             session.toggleAutoHide()
         }
         hotkeys.onCloseAll = { [weak self] in self?.closeAll() }
@@ -299,13 +298,12 @@ final class ApplicationModel: ObservableObject {
         let multiple = settings.value.multiWindow
         let siblings = sessions.filter { $0.source.windowID == source.windowID }
         for existing in siblings {
-            switch intent.match(existing: existing.captureIntent, multiple: multiple, toggleExisting: toggleExisting, hidden: existing.hidden) {
+            switch intent.match(existing: existing.captureIntent, multiple: multiple, toggleExisting: toggleExisting) {
             case .ignore: continue
             case .close: existing.close(); return
             case .reuse:
                 existing.regionNumber = intent == .region ? (existing.regionNumber ?? 1) : nil
                 existing.setViewport(viewport)
-                if existing.hidden { existing.toggleHidden() }
                 if existing.paused { existing.togglePaused() }
                 existing.panel.orderFrontRegardless()
                 return
@@ -367,10 +365,10 @@ final class ApplicationModel: ObservableObject {
         Array(sessions).forEach { $0.close() }
     }
 
-    private func hovered(includeHidden: Bool = false, includeAutoHidden: Bool = false) -> CaptureSession? {
+    private func hovered(includeAutoHidden: Bool = false) -> CaptureSession? {
         let point = NSEvent.mouseLocation
         let hit = PanelHitTesting.frontmost(at: point, among: sessions.map(\.panel))
-        if let hit, let session = sessions.first(where: { $0.panel === hit }), !session.hidden, !session.autoHidden {
+        if let hit, let session = sessions.first(where: { $0.panel === hit }), !session.autoHidden {
             return session
         }
         if includeAutoHidden, let session = sessions.reversed().first(where: {
@@ -378,14 +376,11 @@ final class ApplicationModel: ObservableObject {
         }) {
             return session
         }
-        if includeHidden {
-            return sessions.reversed().first { $0.hidden && $0.panel.frame.contains(point) }
-        }
         return nil
     }
 
     private func hoverAction(_ action: HoverAction) -> Bool {
-        guard let session = hovered(includeHidden: action == .close, includeAutoHidden: action == .close) else { return false }
+        guard let session = hovered(includeAutoHidden: action == .close) else { return false }
         if action == .seekBackward || action == .seekForward {
             return session.seekMedia(relative: action == .seekBackward ? -5 : 5)
         }

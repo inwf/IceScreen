@@ -159,18 +159,13 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(state.shouldCapture)
     }
 
-    func testManualHideFromTransparentPanelCanBeRestored() {
+    func testLeavingTransparentAutoHideRestoresCapture() {
         var state = PanelVisibility()
         state.updatePointer(inside: true, autoHide: true)
-        state.toggleManual(at: 10)
-        XCTAssertTrue(state.manuallyHidden)
+        XCTAssertFalse(state.shouldCapture)
+        state.updatePointer(inside: false, autoHide: true)
         XCTAssertFalse(state.automaticallyHidden)
-        XCTAssertFalse(state.isExpired(at: 69.9))
-        XCTAssertTrue(state.isExpired(at: 70))
-        state.toggleManual(at: 20)
         XCTAssertTrue(state.shouldCapture)
-        XCTAssertNil(state.closeDeadline)
-        XCTAssertFalse(state.isExpired(at: 100))
     }
 
     func testVisibleAutoHideKeepsCaptureAndHonorsPauseAndSleep() {
@@ -192,10 +187,6 @@ final class InteractionTests: XCTestCase {
         state.displaySleeping = true
         XCTAssertFalse(state.shouldCapture)
         state.displaySleeping = false
-        XCTAssertTrue(state.shouldCapture)
-        state.toggleManual(at: 10)
-        XCTAssertFalse(state.shouldCapture)
-        state.toggleManual(at: 20)
         XCTAssertTrue(state.shouldCapture)
     }
 

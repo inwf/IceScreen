@@ -6,11 +6,19 @@
 
 - Appearance previews the normal, hidden, or hover state while you adjust its transparency or edge shading, including keyboard adjustments and resets. The preview returns to pointer control after one second.
 
+### Removed
+
+- Removed manual temporary hiding, its restore action, and its 60-second auto-close timer. Auto-hide on hover is unchanged.
+
 ---
 
 ### 变更
 
 - 在外观页调整普通透明度、隐藏时透明度或边缘阴影时，预览会显示对应状态。键盘微调和恢复默认值也会触发预览，结束一秒后恢复鼠标控制。
+
+### 移除
+
+- 移除浮窗的手动「暂时隐藏」、恢复入口和 60 秒后自动关闭的逻辑。鼠标移入时自动隐藏不变。
 
 ## 1.2.11 — 2026-11-19
 

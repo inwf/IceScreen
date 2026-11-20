@@ -293,7 +293,7 @@ struct SettingsView: View {
                     instruction(L10n.text("滚动 / ⌘ + 滚动", "Scroll / ⌘ + scroll"), L10n.text("平移 / 缩放", "Pan / zoom"))
                     instruction(L10n.text("捏合 / = / −", "Pinch / = / −"), L10n.text("缩放画面", "Zoom content"))
                 }
-            } footer: { Text(L10n.text("以上操作在鼠标位于浮窗上时生效。手动隐藏 60 秒后自动关闭。", "These controls work while the pointer is over a panel. Manually hidden panels close after 60 seconds.")) }
+            } footer: { Text(L10n.text("以上操作在鼠标位于浮窗上时生效。", "These controls work while the pointer is over a panel.")) }
         }.formStyle(.grouped)
     }
 

@@ -160,11 +160,6 @@ enum SourceFocusChecks {
         try require(session.viewport == afterPinch, "Ended gestures must ignore late magnification changes.")
         try require(otherApp.isActive && !session.panel.isKeyWindow,
                      "Magnification must keep the foreground app and non-key panel unchanged.")
-        session.beginMagnification(at: pinchOrigin)
-        session.toggleHidden()
-        session.changeMagnification(by: 1)
-        try require(session.viewport == afterPinch, "Hidden panels must cancel their active magnification.")
-        session.toggleHidden()
         session.resetZoom()
 
         try checkScrollZoom(session, foreground: otherApp)

@@ -47,7 +47,7 @@ final class PanelMagnificationRouter {
     }
 
     private func begin(at point: NSPoint) {
-        let candidates = sessions().filter { !$0.hidden && !$0.autoHidden && !$0.stageInactive }
+        let candidates = sessions().filter { !$0.autoHidden && !$0.stageInactive }
         let panel = PanelHitTesting.frontmost(at: point, among: candidates.map(\.panel))
         target = candidates.first { $0.panel === panel }
         origin = point

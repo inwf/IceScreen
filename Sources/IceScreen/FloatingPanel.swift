@@ -27,7 +27,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     @Published private(set) var viewport: Viewport
     @Published private var visibility = PanelVisibility()
     var paused: Bool { visibility.paused }
-    var hidden: Bool { visibility.manuallyHidden }
     var autoHidden: Bool { visibility.automaticallyHidden }
     @Published private(set) var idle = false
     private let settings: SettingsStore
@@ -86,7 +85,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     var bundleID: String { source.owningApplication?.bundleIdentifier ?? appName }
     var status: String {
         if let failure { return failure }
-        if hidden { return L10n.text("已隐藏 · 60 秒后关闭", "Hidden · closes after 60 seconds") }
         if autoHidden { return L10n.text("鼠标穿透", "Pointer passes through") }
         if paused { return L10n.text("已暂停", "Paused") }
         if idle { return L10n.text("内容暂时没有变化", "Content is currently idle") }
@@ -228,7 +226,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func beginMagnification(at screenPoint: NSPoint) {
-        guard !closed, panel.isVisible, !panel.ignoresMouseEvents, !hidden, !autoHidden, !stageInactive,
+        guard !closed, panel.isVisible, !panel.ignoresMouseEvents, !autoHidden, !stageInactive,
               surface.bounds.width > 0, surface.bounds.height > 0 else { return }
         endMagnification()
         let point = surface.convert(panel.convertPoint(fromScreen: screenPoint), from: nil)
@@ -238,7 +236,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func changeMagnification(by amount: Double) {
-        guard !closed, panel.isVisible, !hidden, !stageInactive,
+        guard !closed, panel.isVisible, !stageInactive,
               let value = magnificationGesture.change(by: amount) else { return }
         setViewport(value)
     }
@@ -472,22 +470,8 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     @objc func zoomIn() { setViewport(viewport.zoomed(by: 1.25)) }
     @objc func zoomOut() { setViewport(viewport.zoomed(by: 0.8)) }
 
-    @objc func toggleHidden() {
-        visibility.toggleManual(at: ProcessInfo.processInfo.systemUptime)
-        if hidden {
-            panel.orderOut(nil)
-            surface.frameView.releaseFrame()
-        } else {
-            panel.alphaValue = panelOpacity
-            panel.ignoresMouseEvents = false
-            panel.orderFrontRegardless()
-        }
-        syncRunning()
-        updateStatus()
-    }
-
     func pointerMoved(to point: CGPoint) {
-        guard !hidden, !closed else { return }
+        guard !closed else { return }
         let inside = panel.frame.contains(point)
         surface.setHovered(inside)
         let previous = autoHidden
@@ -525,7 +509,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func tick(at now: TimeInterval) {
-        if visibility.isExpired(at: now) { close(); return }
         if !visibility.systemSleeping, !visibility.displaySleeping, now - lastGeometryCheck >= 2 {
             lastGeometryCheck = now
             checkSourceGeometry()
@@ -691,7 +674,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         add(L10n.text("检测细微变化", "Detect subtle changes"), #selector(toggleSensitiveDetection), checked: sensitiveDetection)
         add(L10n.text("增强对比度和清晰度", "Enhance contrast and clarity"), #selector(toggleEnhanced), checked: enhanced)
         menu.addItem(.separator())
-        add(hidden ? L10n.text("恢复显示", "Restore panel") : L10n.text("暂时隐藏", "Hide temporarily"), #selector(toggleHidden))
         add(L10n.text("关闭浮窗", "Close panel"), #selector(close))
         return menu
     }

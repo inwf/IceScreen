@@ -59,9 +59,7 @@ public enum HoverAction: Equatable, Sendable {
 }
 
 public struct PanelVisibility: Equatable, Sendable {
-    public private(set) var manuallyHidden = false
     public private(set) var automaticallyHidden = false
-    public private(set) var closeDeadline: TimeInterval?
     public var paused = false
     public var systemSleeping = false
     public var displaySleeping = false
@@ -70,21 +68,11 @@ public struct PanelVisibility: Equatable, Sendable {
 
     public init() {}
     public var shouldCapture: Bool {
-        !manuallyHidden && (!automaticallyHidden || autoHideOpacity > 0) && !paused && !systemSleeping && !displaySleeping
-    }
-
-    public mutating func toggleManual(at time: TimeInterval) {
-        manuallyHidden.toggle()
-        automaticallyHidden = false
-        closeDeadline = manuallyHidden ? time + 60 : nil
+        (!automaticallyHidden || autoHideOpacity > 0) && !paused && !systemSleeping && !displaySleeping
     }
 
     public mutating func updatePointer(inside: Bool, autoHide: Bool) {
-        automaticallyHidden = !manuallyHidden && !interacting && autoHide && inside
-    }
-
-    public func isExpired(at time: TimeInterval) -> Bool {
-        closeDeadline.map { time >= $0 } ?? false
+        automaticallyHidden = !interacting && autoHide && inside
     }
 }
 

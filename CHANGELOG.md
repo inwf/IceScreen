@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Hover playback buttons grow with the panel and stop at a comfortable size. Play/pause is larger than the track buttons on roomier panels.
 - Appearance previews the normal, hidden, or hover state while you adjust its transparency or edge shading, including keyboard adjustments and resets. The preview returns to pointer control after one second.
 
 ### Removed
@@ -14,6 +15,7 @@
 
 ### 变更
 
+- 悬停时的媒体按钮随浮窗平滑放大，到达上限后保持不变。空间充足时，播放／暂停键比上一首和下一首更大。
 - 在外观页调整普通透明度、隐藏时透明度或边缘阴影时，预览会显示对应状态。键盘微调和恢复默认值也会触发预览，结束一秒后恢复鼠标控制。
 
 ### 移除

@@ -84,17 +84,12 @@ final class PanelChromeState: ObservableObject {
             if size.height >= 80 {
                 items.append(.init(id: .resize, frame: CGRect(x: size.width - 38, y: size.height - 38, width: 30, height: 30)))
             }
-            if let media = value.media, !value.stageInactive, size.height >= 100, size.width >= 150 {
-                let hasSeek = value.mediaSeek && media.seekable && size.height >= 145 && size.width >= 230
-                let y = size.height - (hasSeek ? 80 : 40)
-                items.append(.init(id: .playPause, frame: CGRect(x: size.width / 2 - 15, y: y, width: 30, height: 30)))
-                if size.width >= 230 {
-                    items.append(.init(id: .previousTrack, frame: CGRect(x: size.width / 2 - 53, y: y, width: 30, height: 30)))
-                    items.append(.init(id: .nextTrack, frame: CGRect(x: size.width / 2 + 23, y: y, width: 30, height: 30)))
-                }
-                if hasSeek {
-                    items.append(.init(id: .seek, frame: CGRect(x: 12, y: size.height - 43, width: size.width - 62, height: 36)))
-                }
+            if let media = value.media, !value.stageInactive,
+               let row = MediaButtonLayout(size: size, seekable: value.mediaSeek && media.seekable) {
+                items.append(.init(id: .playPause, frame: row.play))
+                if let previous = row.previous { items.append(.init(id: .previousTrack, frame: previous)) }
+                if let next = row.next { items.append(.init(id: .nextTrack, frame: next)) }
+                if let seek = row.seek { items.append(.init(id: .seek, frame: seek)) }
             }
         }
         if value.hovered || value.detection {
@@ -132,7 +127,7 @@ struct PanelChrome: View {
     private func controls(in size: CGSize) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(state.regions(in: size)) { region in
-                control(region.id)
+                control(region.id, diameter: region.frame.height)
                     .frame(width: region.frame.width, height: region.frame.height)
                     .position(x: region.frame.midX, y: region.frame.midY)
             }
@@ -180,7 +175,7 @@ struct PanelChrome: View {
         }
     }
 
-    @ViewBuilder private func control(_ action: PanelAction) -> some View {
+    @ViewBuilder private func control(_ action: PanelAction, diameter: CGFloat) -> some View {
         if action == .returnSource {
             PanelReturnButton(title: action.label) { state.perform?(action) }
         } else if action == .seek, let snapshot = state.value.media {
@@ -196,14 +191,18 @@ struct PanelChrome: View {
                     .allowsHitTesting(false)
             }
         } else if #available(macOS 26.0, *) {
-            button(action)
+            button(action, diameter: diameter)
                 .buttonStyle(.glass(.clear.interactive()))
                 .buttonSizing(.flexible)
                 .buttonBorderShape(action == .frameRate || action == .threshold ? .capsule : .circle)
                 .glassEffectID(action, in: glassNamespace)
                 .glassEffectTransition(.materialize)
+        } else if action == .playPause || action == .previousTrack || action == .nextTrack {
+            button(action, diameter: diameter, fillMediaTarget: true)
+                .buttonStyle(.plain)
+                .background(.regularMaterial, in: Circle())
         } else {
-            button(action).buttonStyle(.bordered)
+            button(action, diameter: diameter).buttonStyle(.bordered)
         }
     }
 
@@ -214,9 +213,12 @@ struct PanelChrome: View {
             .frame(width: 30, height: 30)
     }
 
-    private func button(_ action: PanelAction) -> some View {
+    private func button(_ action: PanelAction, diameter: CGFloat, fillMediaTarget: Bool = false) -> some View {
         Button { state.perform?(action) } label: {
-            label(action).contentShape(Rectangle())
+            label(action)
+                .font(.system(size: diameter * 0.4))
+                .frame(width: fillMediaTarget ? diameter : nil, height: fillMediaTarget ? diameter : nil)
+                .contentShape(Rectangle())
         }
         .controlSize(.regular)
         .focusable(false)
@@ -247,11 +249,11 @@ struct PanelChrome: View {
         case .resize, .returnSource:
             EmptyView()
         case .playPause:
-            Image(systemName: state.value.media?.playing == true ? "pause.fill" : "play.fill").font(.system(size: 12))
+            Image(systemName: state.value.media?.playing == true ? "pause.fill" : "play.fill")
         case .previousTrack:
-            Image(systemName: "backward.end.fill").font(.system(size: 12))
+            Image(systemName: "backward.end.fill")
         case .nextTrack:
-            Image(systemName: "forward.end.fill").font(.system(size: 12))
+            Image(systemName: "forward.end.fill")
         case .seek:
             EmptyView()
         }

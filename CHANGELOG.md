@@ -11,6 +11,10 @@
 
 - Removed manual temporary hiding, its restore action, and its 60-second auto-close timer. Auto-hide on hover is unchanged.
 
+### Fixed
+
+- Returning to a closed source window now reports that it has closed when macOS retains its offscreen record on the active desktop.
+
 ---
 
 ### 变更
@@ -21,6 +25,10 @@
 ### 移除
 
 - 移除浮窗的手动「暂时隐藏」、恢复入口和 60 秒后自动关闭的逻辑。鼠标移入时自动隐藏不变。
+
+### 修复
+
+- 来源窗口关闭后，即使 macOS 在当前桌面保留了它的离屏记录，尝试返回时也会提示窗口已关闭。
 
 ## 1.2.11 — 2026-11-19
 

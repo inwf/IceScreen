@@ -37,6 +37,14 @@ enum NativeFocusDiagnostics {
         event("stage_begin")
     }
 
+    // On successful cleanup, attribute any pending scenario failure to its original stage.
+    static func restoringDesktop(_ cleanup: () async throws -> Void) async throws {
+        let previous = (phase, stage)
+        begin("restore_fixture_desktop")
+        try await cleanup()
+        (phase, stage) = previous
+    }
+
     static func event(_ name: String, details: [String: Any] = [:]) {
         var record = details
         record["time"] = ISO8601DateFormatter().string(from: Date())

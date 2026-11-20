@@ -135,6 +135,7 @@ final class WindowCatalog: ObservableObject {
                 foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
                 focusedWindowID: nil, onScreen: false, onVisibleSpace: false, hidden: app.isHidden, minimized: nil)
             pendingOperation = ""
+            var unresolvedEntry: [String: Any]?
             do {
                 let entry = try reference.validate()
                 observation.onScreen = entry?[kCGWindowIsOnscreen as String] as? Bool == true
@@ -153,6 +154,7 @@ final class WindowCatalog: ObservableObject {
                     throw SourceFocusPending(operation: L10n.text("等待显示来源应用", "Wait for source app to appear"))
                 }
                 guard let target = try reference.resolveElement() else {
+                    unresolvedEntry = entry
                     throw SourceFocusPending(operation: L10n.text("等待来源窗口对象重新可用", "Wait for source window element to become available"))
                 }
                 observation.minimized = try minimized(target)
@@ -196,6 +198,11 @@ final class WindowCatalog: ObservableObject {
                 pendingOperation = pending.operation
             }
             guard !progress.expired(at: ProcessInfo.processInfo.systemUptime) else {
+                if let unresolvedEntry {
+                    // Only classify a residual WindowServer record after allowing AX to recover.
+                    do { _ = try reference.resolveElement(checkClosedRecord: unresolvedEntry) }
+                    catch is SourceFocusPending { /* Retain the normal timeout diagnosis. */ }
+                }
                 Self.focusLog.error("Window focus timeout: expectedPID=\(pid), expectedWindow=\(windowID), frontmostPID=\(observation.foregroundPID ?? 0), focusedWindow=\(observation.focusedWindowID ?? 0), onScreen=\(observation.onScreen), axStatus=\(read.rawValue)")
                 let foreground = NSWorkspace.shared.frontmostApplication
                 Self.focusLog.error("Foreground application: \(foreground?.bundleIdentifier ?? "unknown", privacy: .public), name=\(foreground?.localizedName ?? "unknown", privacy: .public)")

@@ -48,25 +48,8 @@ elif [[ $# != 0 ]]; then
     echo "Usage: check-source-focus.sh [--ci]" >&2
     exit 1
 fi
-result=0
-for scenario in terminal interactions; do
-    completion="$PWD/.build/focus-checks/$scenario.result"
-    stdout="$PWD/.build/focus-checks/$scenario.stdout"
-    stderr="$PWD/.build/focus-checks/$scenario.stderr"
-    rm -f "$completion" "$completion.jsonl" "$stdout" "$stderr"
-    launch_status=0
-    open -W -n --stdout "$stdout" --stderr "$stderr" "$PWD/.build/focus-checks/Checks.app" \
-        --args "$PWD/.build/focus-checks" "$completion" "$PWD" "$scenario" || launch_status=$?
-    for output in "$stdout" "$stderr"; do if [[ -f "$output" ]]; then cat "$output"; fi; done
-    if [[ "$launch_status" != 0 || ! -f "$completion" ]] || [[ "$(cat "$completion")" != "passed" ]]; then
-        echo "Source focus scenario failed: $scenario (launch status $launch_status)." >&2
-        result=1
-    else
-        echo "Source focus scenario passed: $scenario."
-    fi
-done
-if [[ "$result" != 0 ]]; then
+if ! bash scripts/run-source-focus-scenarios.sh "$PWD/.build/focus-checks" "$PWD/.build/focus-checks" "$PWD"; then
     log show --last 5m --style compact --predicate 'subsystem == "org.icescreen.app" AND (category == "SourceFocus" OR category == "PanelInteraction" OR category == "FrameRenderer")'
     lsappinfo front
+    exit 1
 fi
-exit "$result"

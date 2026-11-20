@@ -112,6 +112,16 @@ enum SourceFocusChecks {
             NativeFocusDiagnostics.snapshot("fixture_discovery_failed")
             throw RequestError.message("All three fixture windows must appear in ScreenCaptureKit before capture.")
         }
+        // ScreenCaptureKit also lists windows on inactive Spaces, where AXWindows can be empty.
+        if try !WindowActivation.isOnVisibleSpace(source.windowID) {
+            NativeFocusDiagnostics.step("bring_fixture_desktop_forward")
+            try WindowActivation.bringForward(processID: sourceApp.processIdentifier, windowID: source.windowID)
+        }
+        try await wait("confirm_fixture_desktop") {
+            try [source, other, sibling].allSatisfy {
+                try WindowActivation.isOnVisibleSpace($0.windowID) && isOnScreen($0.windowID)
+            }
+        }
         let capturedTarget = try await readyElement(source)
         _ = try await readyElement(other)
         _ = try await readyElement(sibling)
@@ -294,16 +304,16 @@ enum SourceFocusChecks {
                 ($0[kCGWindowNumber as String] as? CGWindowID) == source.windowID
                     && $0[kCGWindowIsOnscreen as String] as? Bool == true
             }
-            let spaces = try WindowActivation.spaceIDs(for: source.windowID)
-            // close() 移除窗口；WindowServer 可以继续保留无桌面归属的离屏记录。
+            // WindowServer may retain the closed window's offscreen record and its Space.
             return closed && !identifiers.contains(source.windowID) && identifiers.contains(sibling.windowID)
-                && !visible && spaces.isEmpty
+                && !visible
         }
         var rejected = false
         NativeFocusDiagnostics.step("verify_closed_source_rejection")
         do { try await catalog.focus(source, retainedTarget: session.focusTarget) }
         catch {
-            guard case RequestError.message(let message) = error, message == "来源窗口已经关闭。" else { throw error }
+            guard case RequestError.message(let message) = error,
+                  message == L10n.text("来源窗口已经关闭。", "The source window has closed.") else { throw error }
             rejected = true
         }
         try require(rejected, "A closed source window must not be reported as focused.")
@@ -353,7 +363,7 @@ enum SourceFocusChecks {
         let video = try await NSWorkspace.shared.openApplication(at: directory.appendingPathComponent("Other.app"),
                                                                 configuration: configuration)
         NativeFocusDiagnostics.track("fullscreen", application: video)
-        defer { video.terminate() }
+        defer { if !video.isTerminated { video.terminate() } }
         let catalog = WindowCatalog()
         var source: SCWindow?
         var videoSource: SCWindow?
@@ -369,6 +379,38 @@ enum SourceFocusChecks {
             try await Task.sleep(for: .milliseconds(50))
         }
         guard let source, let videoSource else { throw RequestError.message("Terminal and full-screen fixture windows must exist.") }
+        let desktop = Set(try WindowActivation.visibleSpaceIDs())
+        var scenarioFailure: Error?
+        do {
+            try await runTerminalRoundTrip(source: source, terminal: terminal, videoSource: videoSource,
+                                           video: video, catalog: catalog, settings: settings)
+        } catch {
+            scenarioFailure = error
+            NativeFocusDiagnostics.event("scenario_failure", details: ["message": String(describing: error)])
+        }
+        // Closing a full-screen fixture is asynchronous, including after a failed test.
+        do {
+            try await NativeFocusDiagnostics.restoringDesktop {
+                video.terminate()
+                try await wait("confirm_fullscreen_fixture_quit") { video.isTerminated }
+                if try !WindowActivation.isOnVisibleSpace(source.windowID) {
+                    try WindowActivation.bringForward(processID: terminal.processIdentifier, windowID: source.windowID)
+                }
+                try await wait("confirm_original_desktop") {
+                    try Set(WindowActivation.visibleSpaceIDs()) == desktop
+                        && WindowActivation.isOnVisibleSpace(source.windowID) && isOnScreen(source.windowID)
+                }
+            }
+        } catch {
+            if let scenarioFailure { throw RequestError.message("\(scenarioFailure); desktop cleanup: \(error)") }
+            throw error
+        }
+        if let scenarioFailure { throw scenarioFailure }
+    }
+
+    @MainActor private static func runTerminalRoundTrip(source: SCWindow, terminal: NSRunningApplication,
+                                                       videoSource: SCWindow, video: NSRunningApplication,
+                                                       catalog: WindowCatalog, settings: SettingsStore) async throws {
         _ = try await readyElement(source)
         _ = try await readyElement(videoSource)
         print("Terminal target: PID=\(terminal.processIdentifier), window=\(source.windowID), title=\(source.title ?? "").")
@@ -408,12 +450,24 @@ enum SourceFocusChecks {
             try set(videoElement, "AXFullScreen", kCFBooleanTrue)
             return true
         }
+        func fixtureHasFocus() throws -> Bool {
+            try video.isActive && NSWorkspace.shared.frontmostApplication?.processIdentifier == video.processIdentifier
+                && WindowActivation.windowID(of: focusedWindow(video)) == videoSource.windowID
+        }
+        var requestedFixtureFocus = false
         try await wait("confirm_fullscreen_space") {
             let videoVisible = try WindowActivation.isOnVisibleSpace(videoSource.windowID)
             let sourceVisible = try WindowActivation.isOnVisibleSpace(source.windowID)
-            return try isFullScreen(videoElement) && video.isActive && videoVisible && !sourceVisible
-                && !isOnScreen(source.windowID) && session.panel.isOnActiveSpace
-                && isOnScreen(CGWindowID(session.panel.windowNumber))
+            guard try isFullScreen(videoElement), videoVisible, isOnScreen(videoSource.windowID),
+                  !sourceVisible, !isOnScreen(source.windowID), session.panel.isOnActiveSpace,
+                  isOnScreen(CGWindowID(session.panel.windowNumber)) else { return false }
+            if try fixtureHasFocus() { return true }
+            if !requestedFixtureFocus {
+                requestedFixtureFocus = true
+                NativeFocusDiagnostics.snapshot("recover_fullscreen_fixture_focus")
+                try WindowActivation.bringForward(processID: video.processIdentifier, windowID: videoSource.windowID)
+            }
+            return false
         }
         NativeFocusDiagnostics.begin("terminal_off_space")
         let originalSpaces = try WindowActivation.spaceIDs(for: source.windowID)
@@ -435,6 +489,7 @@ enum SourceFocusChecks {
             return true
         }
         NativeFocusDiagnostics.begin("retained_terminal_return")
+        try require(fixtureHasFocus(), "The exact full-screen fixture must still be in front before the click.")
         try click(session)
         try await wait("click_delivery") { requests == 1 }
         try await wait("focus_confirmation") { confirmations == 1 }

@@ -87,7 +87,7 @@ final class SourceWindowTarget {
         return nil
     }
 
-    func resolveElement() throws -> AXUIElement? {
+    func resolveElement(checkClosedRecord entry: [String: Any]? = nil) throws -> AXUIElement? {
         resolutionState = "not_retained"
         var pending: SourceFocusPending?
         if let retainedElement {
@@ -162,9 +162,23 @@ final class SourceWindowTarget {
             return element
         }
         if let pending { throw pending }
-        // 已失效的原 AX 对象没有同 ID 替代对象，且窗口已脱离所有桌面。
-        if hasInvalidatedElement, try WindowActivation.spaceIDs(for: windowID).isEmpty {
-            throw RequestError.message(L10n.text("来源窗口已经关闭。", "The source window has closed."))
+        if hasInvalidatedElement {
+            let spaces = try WindowActivation.spaceIDs(for: windowID)
+            // After focus retries, WindowServer can still list a closed window on the active desktop.
+            let staleRecord = try entry != nil && entry?[kCGWindowNumber as String] as? CGWindowID == windowID
+                && entry?[kCGWindowOwnerPID as String] as? pid_t == processID
+                && entry?[kCGWindowIsOnscreen as String] as? Bool != true
+                && application?.isHidden == false && application?.isActive == true
+                && NSWorkspace.shared.frontmostApplication?.processIdentifier == processID
+                && status == .success && focusedStatus == .success
+                && !(Set(spaces).isDisjoint(with: WindowActivation.visibleSpaceIDs()))
+                && elements.allSatisfy { element in
+                    guard let id = try WindowActivation.windowID(of: element) else { return false }
+                    return id != windowID
+                }
+            if spaces.isEmpty || staleRecord {
+                throw RequestError.message(L10n.text("来源窗口已经关闭。", "The source window has closed."))
+            }
         }
         // 非当前 Space 的窗口可以暂时不出现在 AXWindows 中。
         return nil

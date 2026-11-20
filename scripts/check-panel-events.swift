@@ -519,6 +519,20 @@ enum PanelEventChecks {
         hover(false)
         precondition(abs(preview.surface.alphaValue - 0.4) < 0.001, "Pointer exit must restore the selected opacity.")
         preferences.autoHide = false
+        preferences.autoHideTransparency = 1
+        preview.update(preferences, original: false, dark: false, mode: .hidden)
+        precondition(preview.surface.alphaValue == 0 && !preview.pointerInside, "Hidden transparency must preview without hover or auto-hide.")
+        preferences.dimOnHover = true
+        preferences.autoHide = true
+        preview.update(preferences, original: false, dark: false, mode: .edges)
+        precondition(!shade.isHidden && abs(preview.surface.alphaValue - 0.4) < 0.001, "Edge editing must show the controls even when auto-hide is enabled.")
+        hover(true)
+        preview.update(preferences, original: false, dark: false, mode: .normal)
+        precondition(shade.isHidden && abs(preview.surface.alphaValue - 0.4) < 0.001, "Normal editing must override actual hover.")
+        preview.update(preferences, original: false, dark: false)
+        precondition(preview.surface.alphaValue == 0, "Ending the override must restore actual hover.")
+        hover(false)
+        preferences.autoHide = false
         preview.update(preferences, original: true, dark: false)
         precondition(!preview.surface.frameView.enhanced && preferences.enhanceContrast,
                      "Comparing the original must leave the actual preference enabled.")

@@ -10,6 +10,9 @@ struct AppearanceSettings: View {
     @ObservedObject var images: AppearanceImageStore
     @Binding var showOriginal: Bool
     @State private var showImagePicker = false
+    @State private var previewMode: AppearancePreviewMode?
+    @State private var heldMode: AppearancePreviewMode?
+    @State private var restoreTask: Task<Void, Never>?
     private let defaults = Preferences()
 
     var body: some View {
@@ -28,14 +31,15 @@ struct AppearanceSettings: View {
                         .help(L10n.text("临时查看未增强的示例画面，不改变浮窗设置", "Preview the original image without changing panel settings"))
                 }
                 .controlSize(.small)
-                AppearancePreview(preferences: store.value, original: showOriginal, image: images.image)
+                AppearancePreview(preferences: store.value, original: showOriginal, image: images.image, mode: previewMode)
                     .frame(height: 204)
                     .accessibilityLabel(L10n.text("浮窗外观示例", "Panel appearance preview"))
-                    .accessibilityValue(L10n.text("圆角 \(Int(store.value.cornerRadius)) 点，普通透明度 \(transparency)，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")", "Corner radius \(Int(store.value.cornerRadius)) points, normal transparency \(transparency), \(showOriginal || !store.value.enhanceContrast ? "original image" : "enhanced contrast and sharpness")"))
+                    .accessibilityValue(previewCaption ?? L10n.text("圆角 \(Int(store.value.cornerRadius)) 点，普通透明度 \(transparency)，\(showOriginal || !store.value.enhanceContrast ? "原始画面" : "已增强对比度和锐度")", "Corner radius \(Int(store.value.cornerRadius)) points, normal transparency \(transparency), \(showOriginal || !store.value.enhanceContrast ? "original image" : "enhanced contrast and sharpness")"))
                 Text(showOriginal ? L10n.text("正在对比原始画面 · 圆角和透明度仍按当前设置显示", "Comparing original · current corner radius and transparency still apply") : (images.image?.name ?? L10n.text("内置文字与图形示例", "Built-in text and graphics sample")))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Text(store.value.autoHide ? L10n.text("鼠标移入后按隐藏时透明度显示，移出后恢复。", "Hover to preview auto-hide transparency. Move away to restore the panel.") : L10n.text("鼠标移入画面预览按钮、边缘阴影和操作提示。", "Hover to preview controls, edge shading, and hints."))
+                Text(previewCaption ?? (store.value.autoHide ? L10n.text("鼠标移入后按隐藏时透明度显示，移出后恢复。", "Hover to preview auto-hide transparency. Move away to restore the panel.") : L10n.text("鼠标移入画面预览按钮、边缘阴影和操作提示。", "Hover to preview controls, edge shading, and hints.")))
                     .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2, reservesSpace: true)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 12)
             Divider()
@@ -43,20 +47,20 @@ struct AppearanceSettings: View {
                 Section(L10n.text("形状与透明度", "Shape and transparency")) {
                     DefaultValueSlider(id: "cornerRadius", title: L10n.text("圆角", "Corner radius"), value: $store.value.cornerRadius,
                                        range: 0...30, step: 1, defaultValue: defaults.cornerRadius,
-                                       format: { "\(Int($0.rounded())) pt" })
-                    DefaultValueSlider(id: "panelOpacity", title: L10n.text("透明度", "Transparency"), value: $store.value.panelTransparency,
+                                       format: { "\(Int($0.rounded())) pt" }, feedback: { _ in clearFeedback() })
+                    DefaultValueSlider(id: "panelOpacity", title: L10n.text("普通透明度", "Normal transparency"), value: $store.value.panelTransparency,
                                        range: 0...1, step: 0.01, defaultValue: defaults.panelTransparency,
-                                       format: Self.percent)
+                                       format: Self.percent, feedback: { feedback(.normal, $0) })
                 }
                 Section {
                     Toggle(L10n.text("增强对比度和锐度", "Enhance contrast and sharpness"), isOn: $store.value.enhanceContrast)
                     DefaultValueSlider(id: "contrastStrength", title: L10n.text("对比度强度", "Contrast"), value: $store.value.contrastStrength,
                                        range: 0...1, step: 0.01, defaultValue: defaults.contrastStrength,
-                                       format: Self.percent)
+                                       format: Self.percent, feedback: { _ in clearFeedback() })
                         .disabled(!store.value.enhanceContrast)
                     DefaultValueSlider(id: "sharpnessStrength", title: L10n.text("锐化强度", "Sharpness"), value: $store.value.sharpnessStrength,
                                        range: 0...1, step: 0.01, defaultValue: defaults.sharpnessStrength,
-                                       format: Self.percent)
+                                       format: Self.percent, feedback: { _ in clearFeedback() })
                         .disabled(!store.value.enhanceContrast)
                 } header: { Text(L10n.text("画面清晰度", "Image clarity")) } footer: {
                     Text(L10n.text("两项强度均可按 1% 调整。0% 保留原始效果，使用「对比原图」查看增强前后的差异。", "Adjust each strength in 1% steps. At 0%, the original image is preserved. Use Compare original to see the difference."))
@@ -65,7 +69,7 @@ struct AppearanceSettings: View {
                     Toggle(L10n.text("鼠标移入时自动隐藏", "Auto-hide on hover"), isOn: $store.value.autoHide)
                     DefaultValueSlider(id: "autoHideOpacity", title: L10n.text("隐藏时透明度", "Hidden transparency"), value: $store.value.autoHideTransparency,
                                        range: 0...1, step: 0.01, defaultValue: defaults.autoHideTransparency,
-                                       format: Self.percent)
+                                       format: Self.percent, feedback: { feedback(.hidden, $0) })
                 } header: { Text(L10n.text("自动隐藏", "Auto-hide")) } footer: {
                     Text(L10n.text("自动隐藏适用于所有浮窗。0% 完全不透明，100% 完全透明。鼠标移入后保持穿透，移出后恢复正常透明度。", "Auto-hide applies to all panels. 0% is fully opaque and 100% is fully transparent. The pointer passes through while hovering. Move away to restore normal transparency."))
                 }
@@ -73,7 +77,7 @@ struct AppearanceSettings: View {
                     Toggle(L10n.text("悬停时控件周围变暗", "Dim around controls on hover"), isOn: $store.value.dimOnHover)
                     DefaultValueSlider(id: "hoverBlur", title: L10n.text("边缘效果强度", "Edge shading"), value: $store.value.hoverBlur,
                                        range: 0...1, step: 0.01, defaultValue: defaults.hoverBlur,
-                                       format: Self.percent)
+                                       format: Self.percent, feedback: { feedback(.edges, $0) })
                         .disabled(!store.value.dimOnHover)
                     Toggle(L10n.text("显示操作提示", "Show control hints"), isOn: $store.value.showHoverHints)
                         .help(L10n.text("鼠标移入时在左下角显示常用操作，并跟随单击定位、Space 预览和缩放状态更新。", "Show common actions in the lower left on hover. Hints follow click-to-focus, Space preview, and zoom settings."))
@@ -93,10 +97,52 @@ struct AppearanceSettings: View {
             Button(L10n.text("好", "OK"), role: .cancel) { images.error = nil }
         } message: { Text(images.error ?? "") }
         .onAppear { images.restoreIfNeeded() }
+        .onDisappear(perform: clearFeedback)
+    }
+
+    private func clearFeedback() {
+        restoreTask?.cancel()
+        restoreTask = nil
+        heldMode = nil
+        previewMode = nil
+    }
+
+    private var previewCaption: String? {
+        guard let previewMode else { return nil }
+        let value: Double
+        let title: String
+        switch previewMode {
+        case .normal:
+            value = store.value.panelTransparency
+            title = L10n.text("普通透明度", "Normal transparency")
+        case .hidden:
+            value = store.value.autoHideTransparency
+            title = L10n.text("隐藏时透明度", "Hidden transparency")
+        case .edges:
+            return L10n.text("边缘效果强度", "Edge shading") + " · " + Self.percent(store.value.hoverBlur)
+        }
+        return title + " · " + Self.percent(value) + (value == 1 ? L10n.text("（完全透明）", " (fully transparent)") : "")
+    }
+
+    private func feedback(_ mode: AppearancePreviewMode, _ event: SliderFeedback) {
+        if event == .ended && heldMode != mode { return }
+        restoreTask?.cancel()
+        previewMode = mode
+        if event == .began { heldMode = mode }
+        if event == .ended || heldMode != mode { heldMode = nil }
+        guard heldMode == nil else { return }
+        restoreTask = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            previewMode = nil
+            restoreTask = nil
+        }
     }
 
     private static func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
 }
+
+enum AppearancePreviewMode { case normal, hidden, edges }
+enum SliderFeedback { case began, changed, ended }
 
 struct DefaultValueSlider: View {
     let id: String
@@ -106,12 +152,14 @@ struct DefaultValueSlider: View {
     let step: Double
     let defaultValue: Double
     let format: (Double) -> String
+    var feedback: (SliderFeedback) -> Void = { _ in }
     @Environment(\.locale) private var locale
 
     private var sliderValue: Binding<Double> {
         Binding(get: { value }, set: { proposed in
             let rounded = range.lowerBound + ((proposed - range.lowerBound) / step).rounded() * step
             value = min(range.upperBound, max(range.lowerBound, rounded))
+            feedback(.changed)
         })
     }
 
@@ -122,7 +170,7 @@ struct DefaultValueSlider: View {
                 .frame(width: locale == AppLanguage.english.locale ? 124 : 84, alignment: .leading)
                 .frame(minHeight: 22, alignment: .leading)
             VStack(spacing: 0) {
-                Slider(value: sliderValue, in: range) { Text(title) }
+                Slider(value: sliderValue, in: range, step: step, onEditingChanged: { feedback($0 ? .began : .ended) }) { Text(title) }
                     .labelsHidden()
                     .frame(height: 22)
                     .accessibilityValue(format(value))
@@ -138,7 +186,7 @@ struct DefaultValueSlider: View {
                     let center = 10 + (geometry.size.width - 20) * fraction
                     let labelWidth = min(88, geometry.size.width)
                     let origin = min(max(0, center - labelWidth / 2), geometry.size.width - labelWidth)
-                    Button { value = defaultValue } label: {
+                    Button { sliderValue.wrappedValue = defaultValue } label: {
                         VStack(spacing: 3) {
                             Circle().fill(.secondary).frame(width: 5, height: 5)
                                 .offset(x: center - origin - labelWidth / 2)
@@ -166,11 +214,12 @@ struct AppearancePreview: NSViewControllerRepresentable {
     let preferences: Preferences
     let original: Bool
     let image: AppearanceImage?
+    let mode: AppearancePreviewMode?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeNSViewController(context: Context) -> AppearancePreviewController { AppearancePreviewController() }
     func updateNSViewController(_ controller: AppearancePreviewController, context: Context) {
-        controller.preview.update(preferences, original: original, dark: colorScheme == .dark, image: image)
+        controller.preview.update(preferences, original: original, dark: colorScheme == .dark, image: image, mode: mode)
     }
     static func dismantleNSViewController(_ controller: AppearancePreviewController, coordinator: ()) {
         controller.preview.releasePreview()
@@ -201,6 +250,7 @@ final class AppearancePreviewView: NSView {
     private var dark = false
     private var imageID: UUID?
     private var preferences = Preferences()
+    private var mode: AppearancePreviewMode?
     private var tracking: NSTrackingArea?
     private var refreshScheduled = false
     private static let visibilityNotifications = [NSWindow.didChangeOcclusionStateNotification,
@@ -216,10 +266,11 @@ final class AppearancePreviewView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func update(_ preferences: Preferences, original: Bool, dark: Bool, image: AppearanceImage? = nil) {
+    func update(_ preferences: Preferences, original: Bool, dark: Bool, image: AppearanceImage? = nil, mode: AppearancePreviewMode? = nil) {
         let appearanceChanged = self.dark != dark || self.preferences.language != preferences.language
         self.dark = dark
         self.preferences = preferences
+        self.mode = mode
         if appearanceChanged { needsDisplay = true }
         if sample == nil || imageID != image?.id || (image == nil && appearanceChanged) {
             surface.frameView.releaseFrame()
@@ -322,11 +373,17 @@ final class AppearancePreviewView: NSView {
     }
 
     private func applyHover(animated: Bool) {
-        surface.setHovered(pointerInside)
-        let opacity = pointerInside && preferences.autoHide ? preferences.autoHideOpacity : preferences.panelOpacity
+        let hovered = mode.map { $0 == .edges } ?? pointerInside
+        let hidden = mode.map { $0 == .hidden } ?? (pointerInside && preferences.autoHide)
+        surface.setHovered(hovered)
+        let opacity = hidden ? preferences.autoHideOpacity : preferences.panelOpacity
         guard surface.alphaValue != opacity else { return }
+        guard animated else {
+            surface.alphaValue = opacity
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
             surface.animator().alphaValue = opacity
         }
     }

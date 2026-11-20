@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Appearance previews the normal, hidden, or hover state while you adjust its transparency or edge shading, including keyboard adjustments and resets. The preview returns to pointer control after one second.
+
+---
+
+### 变更
+
+- 在外观页调整普通透明度、隐藏时透明度或边缘阴影时，预览会显示对应状态。键盘微调和恢复默认值也会触发预览，结束一秒后恢复鼠标控制。
+
 ## 1.2.11 — 2026-11-19
 
 ### Added

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Pressing the region shortcut again cancels a pending or visible selection without starting another one.
+
+---
+
+### 修复
+
+- 区域选择准备中或选框已显示时，再按一次区域快捷键只取消，不会重新打开选框。
+
 ## 1.2.12 — 2026-11-20
 
 ### Changed

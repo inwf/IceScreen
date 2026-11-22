@@ -61,6 +61,7 @@ final class ApplicationModel: ObservableObject {
     private var captureGeneration = 0
     private var captureTasks: [UUID: Task<Void, Never>] = [:]
     private var selectionTask: Task<Void, Never>?
+    var isSelectingRegion: Bool { selectionTask != nil || selector.isPresented }
 
     init(settings store: SettingsStore? = nil) {
         self.settings = store ?? SettingsStore()
@@ -77,7 +78,14 @@ final class ApplicationModel: ObservableObject {
             return !NSApp.windows.contains { $0.windowNumber == number }
         }
         hotkeys.triggerModifier = settings.value.triggerModifier
-        hotkeys.onCapture = { [weak self] region in self?.captureFocused(region: region) }
+        hotkeys.onCapture = { [weak self] region in
+            guard let self else { return }
+            if region && self.isSelectingRegion {
+                self.cancelRegionSelection()
+                return
+            }
+            self.captureFocused(region: region)
+        }
         hotkeys.onQuickRegion = { [weak self] point in self?.quickCapture(at: point) }
         magnification.sessions = { [weak self] in self?.sessions ?? [] }
         hotkeys.onTrackpadGesture = { [weak self] event, point in
@@ -216,29 +224,41 @@ final class ApplicationModel: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
-    func receive(_ request: CaptureRequest, toggleExisting: Bool = false) {
+    private func cancelRegionSelection() {
         selectionTask?.cancel()
+        selectionTask = nil
         selector.cancel()
+    }
+
+    func receive(_ request: CaptureRequest, toggleExisting: Bool = false) {
+        cancelRegionSelection()
         let pid = preferredPID()
         captureGeneration += 1
         let generation = captureGeneration
         let token = UUID()
-        captureTasks[token] = Task {
-            defer { captureTasks[token] = nil }
+        let task = Task {
+            defer {
+                if request.region {
+                    // A cancelled predecessor must not clear the next selection's task.
+                    if !Task.isCancelled { selectionTask = nil }
+                } else { captureTasks[token] = nil }
+            }
+            guard !Task.isCancelled else { return }
             await catalog.refresh()
             guard !Task.isCancelled else { return }
             guard generation == captureGeneration || settings.value.multiWindow else { return }
             if let issue = catalog.error { error = issue; return }
             do {
                 let source = try catalog.resolve(request, preferredPID: pid)
-                if request.region { selectRegion(source) }
+                if request.region { try await selectRegion(source, generation: generation) }
                 else { start(source, viewport: .initial(anchor: request.anchor, factor: request.zoom), toggleExisting: toggleExisting) }
-            } catch { self.error = error.localizedDescription }
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
+        if request.region { selectionTask = task }
+        else { captureTasks[token] = task }
     }
 
     func captureFocused(region: Bool) {
-        selector.cancel()
         var request = CaptureRequest()
         request.region = region
         receive(request, toggleExisting: true)
@@ -251,8 +271,7 @@ final class ApplicationModel: ObservableObject {
     }
 
     func quickCapture(at point: CGPoint) {
-        selectionTask?.cancel()
-        selector.cancel()
+        cancelRegionSelection()
         captureGeneration += 1
         let generation = captureGeneration
         let token = UUID()
@@ -274,23 +293,17 @@ final class ApplicationModel: ObservableObject {
         }
     }
 
-    func selectRegion(_ source: SCWindow) {
-        selectionTask?.cancel()
-        let generation = captureGeneration
-        selectionTask = Task {
-            do {
-                try await catalog.focus(source)
-                try await Task.sleep(for: .milliseconds(180))
-                await catalog.refresh()
-                guard !Task.isCancelled, generation == captureGeneration else { return }
-                guard let updated = catalog.windows.first(where: { $0.windowID == source.windowID }), updated.isOnScreen else {
-                    throw RequestError.message(L10n.text("请先将来源窗口显示到当前桌面，再选择捕获区域。", "Show the source window on the current desktop before selecting a capture region."))
-                }
-                selector.select(frame: updated.frame) { [weak self] selection in
-                    guard let self, let selection, generation == self.captureGeneration else { return }
-                    self.start(updated, viewport: selection, intent: .region)
-                }
-            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    private func selectRegion(_ source: SCWindow, generation: Int) async throws {
+        try await catalog.focus(source)
+        try await Task.sleep(for: .milliseconds(180))
+        await catalog.refresh()
+        guard !Task.isCancelled, generation == captureGeneration else { return }
+        guard let updated = catalog.windows.first(where: { $0.windowID == source.windowID }), updated.isOnScreen else {
+            throw RequestError.message(L10n.text("请先将来源窗口显示到当前桌面，再选择捕获区域。", "Show the source window on the current desktop before selecting a capture region."))
+        }
+        selector.select(frame: updated.frame) { [weak self] selection in
+            guard let self, let selection, generation == self.captureGeneration else { return }
+            self.start(updated, viewport: selection, intent: .region)
         }
     }
 
@@ -359,8 +372,7 @@ final class ApplicationModel: ObservableObject {
         if cancelPending {
             captureGeneration += 1
             captureTasks.values.forEach { $0.cancel() }
-            selectionTask?.cancel()
-            selector.cancel()
+            cancelRegionSelection()
         }
         Array(sessions).forEach { $0.close() }
     }

@@ -333,6 +333,16 @@ enum SourceFocusChecks {
         try require(model.sessions.count == 2, "Two selected regions must create two panels.")
         let a = model.sessions[0], b = model.sessions[1]
         try await wait("confirm_both_region_streams") { a.hasCapturedFrame && b.hasCapturedFrame }
+        // Press twice in one main-actor turn, before window discovery can finish.
+        model.hotkeys.onCapture?(true)
+        try require(model.isSelectingRegion, "The first region shortcut must start a selection.")
+        model.hotkeys.onCapture?(true)
+        try require(!model.isSelectingRegion, "A second region shortcut must cancel pending preparation.")
+        model.hotkeys.onCapture?(true)
+        try await wait("confirm_region_shortcut_reopens") { model.selector.isPresented }
+        model.hotkeys.onCapture?(true)
+        try require(!model.isSelectingRegion && model.sessions.map(\.id) == [a.id, b.id],
+                    "Cancelling the visible selector must not restart capture or change existing panels.")
         a.togglePaused()
         a.resetZoom()
         try require(a.paused && !b.paused && a.viewport == .full && b.viewport == right && a.menuTitle != b.menuTitle,

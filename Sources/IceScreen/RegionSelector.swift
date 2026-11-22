@@ -9,6 +9,7 @@ final class SelectionPanel: NSPanel {
 @MainActor
 final class RegionSelector {
     private var panel: NSPanel?
+    var isPresented: Bool { panel != nil }
     private var completion: ((Viewport?) -> Void)?
 
     func select(frame: CGRect, completion: @escaping (Viewport?) -> Void) {

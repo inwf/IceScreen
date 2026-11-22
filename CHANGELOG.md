@@ -1,12 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.2.13 — 2026-11-22
+
+### Added
+
+- Hover over a panel to see its source app name, without the window title or region number.
 
 ### Fixed
 
 - Pressing the region shortcut again cancels a pending or visible selection without starting another one.
 
 ---
+
+### 新增
+
+- 悬停浮窗时显示来源应用名称，不附加窗口标题或区域编号。
 
 ### 修复
 

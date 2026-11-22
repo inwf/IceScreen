@@ -136,6 +136,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
         panel.contentView = surface
         panel.delegate = self
         surface.owner = self
+        surface.sourceAppName = focusTarget.application?.localizedName ?? source.owningApplication?.applicationName
         surface.onContentClick = { [weak self] in self?.clicked() }
         applyPreferences(preferences)
         autoHideSubscription = settings.$value.map(\.autoHide).removeDuplicates().dropFirst().sink { [weak self] enabled in
@@ -563,7 +564,7 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
     }
 
     func updateStatus() {
-        surface.update(title: title, status: status, idle: idle, detection: idleDetection || changeDetection,
+        surface.update(idle: idle, detection: idleDetection || changeDetection,
                        message: failure ?? (stageInactive ? L10n.text("来源窗口位于台前调度的其他分组\n返回来源窗口后继续捕获", "Source is in another Stage Manager group\nReturn to the source to resume capture") :
                            (paused || sourcePaused ? L10n.text("捕获已暂停", "Capture paused") : (detectedChangeUntil > 0 ? L10n.text("检测到新的画面变化", "New content changes detected") : nil))))
         onChange?()
@@ -687,6 +688,12 @@ final class PanelSurface: NSView {
     private let input = PanelInput(frame: .zero)
     private let resizeInput = PanelResizeHandle(frame: .zero)
     private let chromeState = PanelChromeState()
+    var sourceAppName: String? {
+        didSet {
+            chromeState.value.sourceAppName = sourceAppName
+            updateHint()
+        }
+    }
     private var controls: PanelChromeHost!
     private let dim = PanelDimView()
     private var statusMessage: String?
@@ -786,8 +793,7 @@ final class PanelSurface: NSView {
             } else { chromeState.value = value }
         }
     }
-    func update(title: String, status: String, idle: Bool, detection: Bool, message: String?) {
-        input.toolTip = title + " · " + status
+    func update(idle: Bool, detection: Bool, message: String?) {
         detectionEnabled = detection
         if chromeState.value.idle != idle { chromeState.value.idle = idle }
         statusMessage = message ?? (idle ? L10n.text("内容暂时没有变化", "Content is currently idle") : nil)
@@ -804,7 +810,7 @@ final class PanelSurface: NSView {
     private func updateHint() {
         updateControls()
         dim.isHidden = !hovered || !dimOnHover
-        input.toolTip = (clickToFocus ? L10n.text("单击切换来源与上一个窗口 · ", "Click to switch between the source and previous window · ") : "") + L10n.text("双击返回并关闭 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close")
+        input.toolTip = sourceAppName ?? ((clickToFocus ? L10n.text("单击切换来源与上一个窗口 · ", "Click to switch between the source and previous window · ") : "") + L10n.text("双击返回并关闭 · 双击 \(triggerLabel) 切换自动隐藏 · Delete 关闭", "Double-click to focus & close · Double-tap \(triggerLabel) to toggle auto-hide · Delete to close"))
         needsLayout = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {

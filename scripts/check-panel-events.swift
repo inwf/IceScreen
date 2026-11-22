@@ -305,6 +305,19 @@ enum PanelEventChecks {
         surface.setHovered(true)
         let chrome = surface.subviews.compactMap { $0 as? PanelChromeHost }.first!
         let resize = surface.subviews.compactMap { $0 as? PanelResizeHandle }.first!
+        let sourceName = "终端 Terminal"
+        surface.sourceAppName = sourceName
+        let input = surface.subviews.compactMap { $0 as? PanelInput }.first!
+        for width in [80, 189, 190, 239, 240, 320] {
+            let size = CGSize(width: width, height: 180)
+            if let label = chrome.state.sourceNameFrame(in: size) {
+                precondition(!chrome.state.regions(in: size).contains { $0.frame.intersects(label) })
+            }
+        }
+        precondition(chrome.state.sourceNameFrame(in: surface.bounds.size) != nil)
+        surface.setHovered(false)
+        precondition(chrome.state.sourceNameFrame(in: surface.bounds.size) == nil)
+        surface.setHovered(true)
         let subscription = store.$value.sink { preferences in
             precondition(L10n.language == preferences.language, "Published settings must already use the selected language.")
             surface.applyAppearance(preferences, enhanced: false)
@@ -319,6 +332,8 @@ enum PanelEventChecks {
             precondition(sidebarTitles == expected, "Settings rows must use their explicit language, independently of the previous one.")
             store.value.language = language
             precondition(chrome.state.value.language == language, "Existing panel chrome must update language immediately.")
+            precondition(chrome.state.value.sourceAppName == sourceName && input.toolTip == sourceName,
+                         "The hover label and tooltip must preserve the source application's name.")
             precondition(chrome.state.regions(in: surface.bounds.size).map(\.frame) == regions,
                          "Language changes must preserve control targeting geometry.")
             precondition(chrome.state.detectionTitle == (language == .english ? "Disabled" : "未启用"))
@@ -791,9 +806,9 @@ enum PanelEventChecks {
         }
         chrome.state.value.message = nil
         chrome.state.value.stageInactive = false
-        surface.update(title: "Source", status: "10 FPS", idle: false, detection: true, message: nil)
+        surface.update(idle: false, detection: true, message: nil)
         checkButton(120, 19, .threshold)
-        surface.update(title: "Source", status: "10 FPS", idle: false, detection: false, message: nil)
+        surface.update(idle: false, detection: false, message: nil)
         guard let content = hit(180, 120) as? PanelInput else { fatalError("The hint must not intercept content clicks.") }
         precondition(content.acceptsFirstMouse(for: nil), "Content must accept the first click.")
         precondition(!content.mouseDownCanMoveWindow, "Content must own mouse-down and mouse-up delivery.")

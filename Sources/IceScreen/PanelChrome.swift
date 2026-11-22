@@ -32,6 +32,7 @@ final class PanelChromeState: ObservableObject {
     struct Value: Equatable {
         var language = L10n.language
         var hovered = false
+        var sourceAppName: String?
         var detection = false
         var changeDetection = false
         var idle = false
@@ -100,6 +101,20 @@ final class PanelChromeState: ObservableObject {
         }
         return items
     }
+
+    func sourceNameFrame(in size: CGSize) -> CGRect? {
+        guard value.hovered, value.sourceAppName?.isEmpty == false, size.height >= 30 else { return nil }
+        let buttons = regions(in: size)
+        let leading = buttons.filter { [.close, .frameRate, .threshold].contains($0.id) }.map(\.frame.maxX).max()
+        let trailing = buttons.first { $0.id == .detection }?.frame.minX
+        let left = leading.map { $0 + 4 } ?? 8
+        let right = trailing.map { $0 - 4 } ?? size.width - 8
+        guard right - left >= 32 else { return nil }
+        let frame = CGRect(x: left, y: 13, width: right - left, height: 20)
+        if buttons.contains(where: { $0.frame.intersects(frame) }) { return nil }
+        if value.message != nil, messageLayout(in: size).message.intersects(frame) { return nil }
+        return frame
+    }
 }
 
 struct PanelChrome: View {
@@ -113,6 +128,17 @@ struct PanelChrome: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 hints(in: geometry.size).allowsHitTesting(false)
+                if let name = state.value.sourceAppName, let frame = state.sourceNameFrame(in: geometry.size) {
+                    Text(verbatim: name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black, radius: 2)
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("panel.sourceAppName")
+                }
                 if #available(macOS 26.0, *) {
                     GlassEffectContainer(spacing: 0) { controls(in: geometry.size) }
                 } else {

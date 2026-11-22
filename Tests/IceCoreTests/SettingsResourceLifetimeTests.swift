@@ -20,7 +20,16 @@ final class SettingsResourceLifetimeTests: XCTestCase {
     @MainActor
     func testReopeningCancelsOldReleaseAndNextCloseSchedulesAnother() async throws {
         var releases = 0
-        let lifetime = SettingsResourceLifetime(delay: .milliseconds(30)) { releases += 1 }
+        let first = expectation(description: "Release after closing the reopened window")
+        let second = expectation(description: "Release after the next open and close")
+        let lifetime = SettingsResourceLifetime(delay: .milliseconds(30)) {
+            releases += 1
+            switch releases {
+            case 1: first.fulfill()
+            case 2: second.fulfill()
+            default: XCTFail("Unexpected extra release")
+            }
+        }
         lifetime.opened()
         lifetime.closed()
         lifetime.opened()
@@ -28,11 +37,11 @@ final class SettingsResourceLifetimeTests: XCTestCase {
         XCTAssertEqual(releases, 0)
         lifetime.closed()
         XCTAssertEqual(releases, 0)
-        try await Task.sleep(for: .milliseconds(120))
+        await fulfillment(of: [first], timeout: 2)
         XCTAssertEqual(releases, 1)
         lifetime.opened()
         lifetime.closed()
-        try await Task.sleep(for: .milliseconds(120))
+        await fulfillment(of: [second], timeout: 2)
         XCTAssertEqual(releases, 2)
     }
 

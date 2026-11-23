@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.14 — 2026-11-23
+
+### Fixed
+
+- Refresh Launch Services registration when the application icon changes without a version or installation path change.
+
+---
+
+### 修复
+
+- 应用版本号和安装路径未变化时，图标内容变化也会刷新 Launch Services 注册信息。
+
 ## 1.2.13 — 2026-11-22
 
 ### Added

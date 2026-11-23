@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import CoreServices
+import CryptoKit
 import OSLog
 
 enum ApplicationIdentity {
@@ -14,15 +15,25 @@ enum ApplicationIdentity {
         }
         NSApp.applicationIconImage = image
 
-        let identity = [bundle.bundleURL.resolvingSymlinksInPath().path,
-                        bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
-                        iconName]
+        // 图标可在版本号和安装路径不变时替换，内容摘要用于失效系统注册缓存。
+        let iconDigest: String?
+        do {
+            let iconData = try Data(contentsOf: iconURL)
+            iconDigest = SHA256.hash(data: iconData).map { String(format: "%02x", $0) }.joined()
+        } catch {
+            iconDigest = nil
+        }
+        let identity = iconDigest.map { digest in
+            [bundle.bundleURL.resolvingSymlinksInPath().path,
+             bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+             iconName, digest]
+        }
         let defaults = UserDefaults.standard
         let key = "IceScreen.registeredApplicationIdentity"
-        guard defaults.stringArray(forKey: key) != identity else { return }
+        if let identity, defaults.stringArray(forKey: key) == identity { return }
         // 更新当前应用的系统注册信息；成功后记录，避免每次启动重复注册。
         let status = LSRegisterURL(bundle.bundleURL as CFURL, true)
-        if status == noErr {
+        if status == noErr, let identity {
             defaults.set(identity, forKey: key)
         } else {
             Logger(subsystem: "org.icescreen.app", category: "ApplicationIdentity")

@@ -140,6 +140,9 @@ final class ApplicationModel: ObservableObject {
             if !value.quickLook { self.preview.close() }
             if previous.mediaSpace != value.mediaSpace { self.preview.close() }
             for session in self.sessions {
+                // Preserve per-panel thresholds unless their corresponding global setting changes.
+                if previous.idleSeconds != value.idleSeconds { session.idleSeconds = value.idleSeconds }
+                if previous.changeSeconds != value.changeSeconds { session.changeSeconds = value.changeSeconds }
                 session.applyPreferences(value)
                 if previous.enhanceContrast != value.enhanceContrast { session.enhanced = value.enhanceContrast }
                 if previous.idleDetection != value.idleDetection { session.idleDetection = value.idleDetection }

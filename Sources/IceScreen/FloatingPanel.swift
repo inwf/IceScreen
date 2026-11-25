@@ -274,8 +274,6 @@ final class CaptureSession: NSObject, ObservableObject, Identifiable, NSWindowDe
 
     func applyPreferences(_ value: Preferences) {
         if !value.clickToFocus { clearFocusReturn() }
-        idleSeconds = value.idleSeconds
-        changeSeconds = value.changeSeconds
         clickToFocus = value.clickToFocus
         mediaEnabled = value.mediaControls
         mediaSeekEnabled = value.mediaSeek

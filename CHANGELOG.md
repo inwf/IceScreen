@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Preserve each panel's detection wait times when resizing panels or changing unrelated settings. Updating a global wait time changes only the matching detection threshold.
+
+---
+
+### 修复
+
+- 调整浮窗尺寸或修改其他设置时，保留各浮窗单独设置的检测等待时间。修改全局等待时间时，仅更新对应的检测阈值。
+
 ## 1.2.14 — 2026-11-23
 
 ### Fixed

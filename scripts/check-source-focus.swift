@@ -324,6 +324,8 @@ enum SourceFocusChecks {
         let previous = settings.value
         settings.value.multiWindow = true
         settings.value.mediaControls = false
+        settings.value.detectionNotifications = false
+        settings.value.detectionCommand = ""
         let model = ApplicationModel(settings: settings)
         defer { model.shutdown(); settings.value = previous }
         let left = Viewport(rect: CGRect(x: 0, y: 0, width: 0.4, height: 1))
@@ -333,6 +335,7 @@ enum SourceFocusChecks {
         try require(model.sessions.count == 2, "Two selected regions must create two panels.")
         let a = model.sessions[0], b = model.sessions[1]
         try await wait("confirm_both_region_streams") { a.hasCapturedFrame && b.hasCapturedFrame }
+        try checkDetectionThresholdPreferences(model)
         // Press twice in one main-actor turn, before window discovery can finish.
         model.hotkeys.onCapture?(true)
         try require(model.isSelectingRegion, "The first region shortcut must start a selection.")
@@ -357,6 +360,55 @@ enum SourceFocusChecks {
                     "Closing one region must not dismiss its sibling's preview.")
         b.close()
         try require(!model.preview.isPresented && model.sessions.isEmpty, "Closing the preview owner must dismiss its preview.")
+    }
+
+    @MainActor private static func checkDetectionThresholdPreferences(_ model: ApplicationModel) throws {
+        NativeFocusDiagnostics.step("verify_panel_detection_threshold_preferences")
+        let settings = model.settings
+        let previous = settings.value
+        defer { settings.value = previous }
+        let a = model.sessions[0], b = model.sessions[1]
+        a.idleSeconds = 60; a.changeSeconds = 120
+        b.idleSeconds = 30; b.changeSeconds = 5
+        func requireThresholds(_ idleA: Double, _ changeA: Double, _ idleB: Double, _ changeB: Double,
+                               after action: String) throws {
+            try require(a.idleSeconds == idleA && a.changeSeconds == changeA
+                        && b.idleSeconds == idleB && b.changeSeconds == changeB,
+                        "Panels must retain the expected independent detection thresholds after \(action).")
+        }
+        // Exercise the real resize completion and settings subscription used by all live panels.
+        let size = a.panel.frame.size
+        a.beginHandleResize()
+        a.panel.setContentSize(NSSize(width: size.width * 0.9, height: size.height * 0.9))
+        a.endHandleResize()
+        try require(settings.value.preferredWidth == Double(a.panel.frame.width), "Resize must save the panel width.")
+        try requireThresholds(60, 120, 30, 5, after: "resizing a panel")
+        let unrelatedChanges: [(String, (inout Preferences) -> Void)] = [
+            ("language", { $0.language = $0.language == .english ? .chinese : .english }),
+            ("normal transparency", { $0.panelOpacity = 0.73 }),
+            ("hidden transparency", { $0.autoHideOpacity = 0.28 }),
+            ("corner radius", { $0.cornerRadius = 18 }),
+            ("detection mode", { $0.idleDetection.toggle(); $0.changeDetection.toggle() }),
+            ("sensitivity", { $0.sensitiveDetection.toggle() })
+        ]
+        for (name, update) in unrelatedChanges {
+            update(&settings.value)
+            try requireThresholds(60, 120, 30, 5, after: name)
+        }
+        model.setFPS(app: a.bundleID, fps: 15)
+        try requireThresholds(60, 120, 30, 5, after: "changing app frame rate")
+        settings.value.idleSeconds = previous.idleSeconds == 10 ? 20 : 10
+        try requireThresholds(settings.value.idleSeconds, 120, settings.value.idleSeconds, 5,
+                              after: "explicitly changing the global idle threshold")
+        a.idleSeconds = 60; b.idleSeconds = 30
+        settings.value.changeSeconds = previous.changeSeconds == 20 ? 10 : 20
+        try requireThresholds(60, settings.value.changeSeconds, 30, settings.value.changeSeconds,
+                              after: "explicitly changing the global change threshold")
+        let fresh = CaptureSession(source: a.source, viewport: .full, settings: settings, offset: 2)
+        defer { fresh.close() }
+        try require(fresh.idleSeconds == settings.value.idleSeconds && fresh.changeSeconds == settings.value.changeSeconds,
+                    "New panels must inherit the current global thresholds, not another panel's overrides.")
+        print("Passed native per-panel threshold preservation, independent global updates, and new-panel defaults checks.")
     }
 
     @MainActor private static func checkTerminalFullScreen(in directory: URL, settings: SettingsStore) async throws {

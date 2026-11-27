@@ -1,177 +1,293 @@
-# IceScreen
+<div align="center">
+  <img src="assets/AppIcon.png" alt="IceScreen icon" width="96" height="96" />
+  <h1>IceScreen</h1>
+  <p><strong>Keep the windows you care about in view.</strong></p>
+  <p>Turn any macOS window, or part of one, into a floating panel that stays on top across Spaces.<br />Watch builds, logs, video, and progress bars while you work in another app.</p>
+  <p>
+    <a href="#quick-start"><strong>Quick start</strong></a> ·
+    <a href="#shortcuts-and-gestures">Shortcuts</a> ·
+    <a href="#content-detection">Detection</a> ·
+    <a href="#command-line">Command line</a> ·
+    <a href="#troubleshooting">Troubleshooting</a> ·
+    <a href="README.zh-CN.md">简体中文</a>
+  </p>
+  <p>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-3b7c57?style=flat-square" alt="GPL-3.0-or-later" /></a>
+    <a href="#1-install"><img src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 or later" /></a>
+    <a href="#1-install"><img src="https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-Universal-555555?style=flat-square" alt="Universal app for Apple Silicon and Intel" /></a>
+    <a href="https://github.com/inwf/IceScreen/releases/latest"><img src="https://img.shields.io/github/v/release/inwf/IceScreen?style=flat-square" alt="Latest release" /></a>
+  </p>
+</div>
 
-将任意 macOS 窗口或局部区域变成跨桌面空间的浮窗。SwiftUI 设置、AppKit 浮窗、ScreenCaptureKit 捕获、Metal 显示。macOS 26 设置和浮窗按钮使用原生 Liquid Glass，macOS 14–15 使用系统控件和材质。
 
-支持 macOS 14 Sonoma 及以上，Apple Silicon 和 Intel。GPL-3.0-or-later，全部功能免费，无账号、联网授权、使用时长限制和遥测。
+## Built for windows you need to keep an eye on
 
-## 构建与启动
+Click a window and press `fn + P`. IceScreen shows it in a small floating panel that stays above other windows, appears on every Space, and keeps updating live. Click the panel to jump to the source window, then click it again to go back to what you were doing.
 
-需要 macOS、Xcode 26+ 和 uv，并选择对应工具链：
+IceScreen lives in the menu bar and is built with SwiftUI, AppKit, and ScreenCaptureKit. Every feature is free, with no account, online activation, time limit, or telemetry.
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>Window or region</h3>
+      Capture a whole window, drag to select part of it, or hold <code>fn</code> and double-click an image, video, table, or text area to capture just that element.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Always in view</h3>
+      Panels float above other windows on every Space, including full-screen apps. Hold <code>Space</code> over a panel to preview the full source window.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Zoom into details</h3>
+      Pinch, <code>⌘</code>-scroll, or <code>⌘</code>-drag to zoom into one log line or progress bar. Scroll to pan, and press <code>0</code> to see the whole window again.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h3>Know when it's done</h3>
+      Get a notification when content stops changing, or when it changes again after a quiet period. Run your own shell command on either event.
+    </td>
+    <td valign="top">
+      <h3>Media controls</h3>
+      Play, pause, skip tracks, and seek from the panel. Tap <code>Space</code> to play or pause, and press <code>←</code> / <code>→</code> to jump 5 seconds.
+    </td>
+    <td valign="top">
+      <h3>Out of your way</h3>
+      Auto-hide fades panels when the pointer moves over them and lets clicks reach the window underneath. Each app keeps its own frame rate.
+    </td>
+  </tr>
+</table>
+
+## Quick start
+
+### 1. Install
+
+Requires **macOS 14 Sonoma or later** on **Apple Silicon** or **Intel**.
+
+1. Download **[IceScreen-macOS.dmg](https://github.com/inwf/IceScreen/releases/latest/download/IceScreen-macOS.dmg)** from the [latest release](https://github.com/inwf/IceScreen/releases/latest).
+2. Open the DMG and drag IceScreen to **Applications**.
+3. Open IceScreen from Applications.
+
+Each release also includes a ZIP of the app and a `SHA256SUMS` file for checking the download.
+
+> [!NOTE]
+> IceScreen isn't signed with a paid Apple Developer account. If macOS blocks it, click **Open Anyway** in **System Settings → Privacy & Security**.
+
+### 2. Allow permissions
+
+On first launch, IceScreen opens its settings at **General → System permissions**. Click **Allow…** next to each item and turn IceScreen on in the System Settings page that opens. Restart IceScreen if macOS asks you to.
+
+| Permission | Why IceScreen needs it |
+| --- | --- |
+| Screen Recording | Shows window contents in panels |
+| Accessibility | Global shortcuts, quick capture, and focusing source windows |
+| Input Monitoring | Global shortcuts; settings shows a warning if this is missing |
+| Notifications | Detection alerts; requested when you first turn on detection |
+| Automation | Seeking in Music, TV, Spotify, Swinsian, and VLC; requested the first time you seek |
+
+### 3. Capture your first window
+
+1. Click the window you want to watch, such as a terminal running a build.
+2. Press **`fn + P`**. The window appears in a floating panel at the bottom right of the screen.
+3. Move the pointer over the panel to show its controls. Press `fn + P` again with the same window in front to close the panel.
+
+> [!TIP]
+> IceScreen starts in Simplified Chinese. To switch, open settings from the menu bar icon, choose **通用** (General), and set **界面语言** (App language) to **English**. The change applies immediately.
+
+If pressing `fn` also opens the emoji picker or dictation, set **System Settings → Keyboard → Press 🌐 key to** to **Do Nothing**, or choose another modifier under **Settings → Shortcuts**.
+
+## Ways to capture
+
+| Method | Default | What you get |
+| --- | --- | --- |
+| Capture window | `fn + P` | A panel showing the whole front window |
+| Capture region | `fn + Shift + P` | Drag over the front window to choose an area. `Esc`, a right-click, or the shortcut again cancels. |
+| Quick region capture | Hold `fn` and double-click | The image, video, table, or text area under the pointer, with symmetric black or white bars trimmed off |
+| Menu bar | IceScreen icon | **Capture current window** and **Capture region** |
+
+Quick region capture combines the element under the pointer with rectangle detection on a single screenshot. With **Detect content boundaries during quick capture** turned off under **Settings → Panels**, it zooms into the area around the pointer instead. While you hold the quick capture modifiers, a single click reaches the app after the system double-click interval and drags pass through immediately.
+
+By default each new capture replaces the current panel. Turn on **Allow multiple panels** under **Settings → Panels** to keep several panels open. Region panels from the same window are then numbered Region 1, Region 2, and so on, and each one zooms, pauses, and closes on its own.
+
+A panel closes by itself when its source window closes or its app quits.
+
+
+## Using a panel
+
+Move the pointer over a panel to show its controls:
+
+- **Top left:** close button, the app's frame rate, and the detection wait time when detection is on.
+- **Top:** the source app's name.
+- **Top right:** detection status dot. Green means idle detection, blue means change detection, and the dot pulses once content is idle.
+- **Bottom right:** resize handle.
+- **Bottom left:** hints for the most common actions.
+- **Bottom:** play, pause, track buttons, and a progress bar when the source is playing media.
+
+Right-click a panel for **Focus source window**, **Preview source window**, **Pause capture**, **Restore full view**, the app frame rate, auto-hide, detection modes, and contrast enhancement. The same menu is available for each panel from the menu bar icon, together with **Close all panels**.
+
+Small panels show fewer controls. Make a panel larger to see the frame rate and wait time buttons.
+
+### Switching to the source and back
+
+Click a panel to bring its source window to the front, even when it is on another Space, hidden, or minimized. Click the same panel again to return to the window you were using before. Double-click to focus the source and close the panel.
+
+Click switching can be turned off under **Settings → Panels**. The same page lets you choose what a panel does while its source window is in front: keep showing, pause capture, or close.
+
+### Previewing the full window
+
+Hold `Space` over a panel to see the whole source window at a larger size in the middle of the screen. Release `Space` to close the preview. A quick tap keeps the preview open until you press `Space` again or click anywhere. On panels showing media, a tap plays or pauses instead, and holding longer than 0.25 seconds opens the preview.
+
+### Zooming
+
+| Action | Result |
+| --- | --- |
+| `⌘` + drag | Zoom into the selected area |
+| `⌘` + scroll, or pinch | Zoom around the pointer |
+| Hover and press `=` / `-` | Zoom in / out |
+| Scroll | Pan a zoomed panel |
+| `⌘` + double-click, or hover and press `0` | Show the whole window again |
+
+Zoom goes up to 32×. Pinching works as soon as the pointer is over a panel; you don't need to click it first.
+
+### Auto-hide
+
+Double-tap `fn` over a panel to turn auto-hide on for all panels. A panel then fades out when the pointer moves over it, and clicks go to the window underneath. It reappears when the pointer leaves. To use a hidden panel's controls again, move the pointer to where the panel is and double-tap `fn` to turn auto-hide off. `Delete` still closes a hidden panel.
+
+**Settings → Appearance → Hidden transparency** sets how far panels fade. At 100% a hidden panel is fully transparent and stops capturing until the pointer leaves.
+
+### Media controls
+
+When the source app shares what it is playing with macOS, the panel shows play/pause, previous, and next buttons. Media with a known length also gets a progress bar you can drag. Press `←` / `→` while hovering to jump back or forward 5 seconds.
+
+Live streams, media that can't seek, and apps that don't share playback information show fewer or no controls. Music, TV, Spotify, Swinsian, and VLC seek through app automation, so macOS asks for permission the first time. Media options are under **Settings → Media**.
+
+### Stage Manager
+
+When a source window is in another Stage Manager group, its panel pauses and shows **Return to source**. Click it to switch to that group; capture resumes automatically.
+
+
+## Shortcuts and gestures
+
+All of these work while the pointer is over a panel, without clicking it first.
+
+| Action | Result |
+| --- | --- |
+| Drag | Move the panel |
+| Drag an edge or the bottom-right handle | Resize, keeping the content's proportions |
+| Click / double-click | Switch to the source and back / focus the source and close the panel |
+| `Space` | Preview the source window, or play and pause media |
+| `←` / `→` | Seek media back / forward 5 seconds |
+| `=` / `-` / `0` | Zoom in / zoom out / show the whole window |
+| `F` | Choose the frame rate for this app |
+| `D` / `C` / `S` | Toggle idle / change / subtle change detection |
+| Double-tap `fn` | Toggle auto-hide for all panels |
+| `Delete` | Close the panel |
+
+**Settings → Shortcuts** lets you change the capture shortcuts, the quick capture modifiers, and the modifier you double-tap (`fn`, `⇧`, `⌃`, `⌥`, or `⌘`). The region shortcut follows the window shortcut with one more modifier unless you set it separately; for example `⌘⇧I` gives `⌥⇧⌘I`. You can also turn on a shortcut that closes all panels, `⌘⇧P` by default. Conflicting shortcuts are rejected.
+
+## Content detection
+
+IceScreen can watch a panel and tell you when something happens. Turn modes on for all new panels under **Settings → Detection & Automation**, or for one panel with `D`, `C`, `S`, its right-click menu, or the status dot.
+
+| Mode | Notifies you when | Wait time |
+| --- | --- | --- |
+| Idle | Content stops changing, such as a build or download finishing | 5–120 seconds, default 20 |
+| Change | Content changes again after staying still, such as a new log line or chat message | 1–120 seconds, default 10 |
+| Subtle changes | Adds finer sampling to either mode, for spinners and thin progress bars | — |
+
+Click the wait time at the top of a panel to set it for that panel only. Detection pauses while a panel is paused, fully hidden, or the Mac is asleep, and starts timing again afterwards. Clicking a notification brings the source window to the front.
+
+### Run a command
+
+Under **Detection & Automation → Run a shell command**, enter a command to run through `/bin/sh` whenever a panel detects idle or changed content. It receives these environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `ICESCREEN_EVENT` | `idle` or `change` |
+| `ICESCREEN_APP` | Source app name |
+| `ICESCREEN_BUNDLE_ID` | Source app bundle ID |
+| `ICESCREEN_WINDOW_ID` | Source window ID |
+| `ICESCREEN_WINDOW_TITLE` | Source window title |
+
+For example, to have your Mac speak when a build goes quiet:
 
 ```bash
-swift test
+[ "$ICESCREEN_EVENT" = idle ] && say "$ICESCREEN_APP has finished"
+```
+
+Each panel runs one command at a time and skips new events while it runs. A command is stopped after its timeout (5–300 seconds, default 15), when its panel closes, or when IceScreen quits. Output is discarded; a non-zero exit status is shown as an error. Leave the field empty to turn commands off.
+
+
+## Appearance and performance
+
+**Settings → Appearance** has a live preview at the top. Use the built-in sample or **Choose image…** to try settings on your own picture; **Compare original** shows the image without enhancement.
+
+| Setting | Default |
+| --- | --- |
+| Corner radius, 0–30 pt | 14 pt |
+| Normal transparency | 0% (opaque) |
+| Enhance contrast and sharpness, with separate strengths | Off, 50% each |
+| Hidden transparency for auto-hide | 100% (fully transparent) |
+| Dim around controls on hover, with edge shading strength | On, 100% |
+| Show control hints | On |
+
+Click the dot under a slider to restore its default.
+
+Frame rate is chosen per app: 1, 5, 10, 15, 24, 30, or 60 FPS, with 10 FPS as the default. Lower rates use less power; 1–5 FPS is enough for terminals and logs, while video looks best at 30–60 FPS. Press `F` over a panel to change it for that app. **Settings → Panels** sets the default and resets per-app choices. Capture resolution follows the panel's size on screen, up to 4096 pixels on the longest side. Paused panels, fully hidden panels, and panels on a sleeping Mac stop capturing.
+
+**Settings → Panels** also sets where new panels appear on screen and whether they show over full-screen apps. **Settings → General** turns on launch at login and can hide the menu bar icon; open IceScreen again from Applications to get back to settings.
+
+
+## Command line
+
+The app binary accepts arguments for scripts and launchers:
+
+```bash
+ICESCREEN=/Applications/IceScreen.app/Contents/MacOS/IceScreen
+"$ICESCREEN" --app Terminal
+"$ICESCREEN" --app Terminal --window build --zoom bottom-left:4x
+"$ICESCREEN" --window 12345 --region
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--app NAME` | Part of the app name, or its full bundle ID; not case-sensitive |
+| `--window TITLE_OR_ID` | Part of the window title, or its numeric window ID |
+| `--zoom POSITION:FACTOR` | Start zoomed into `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, or `bottom-right`, from 1× to 32× |
+| `--region` | Select a region of the matched window |
+| `--help` | Show usage |
+
+Without `--app` or `--window`, IceScreen captures the front window. If several windows match a title, add `--app` or use the window ID. When IceScreen is already running, the request goes to the running app and the command exits as soon as it is received, or with an error if there is no reply within 3 seconds. Problems such as a missing window appear in the settings window. With no arguments, the command opens settings in the running app.
+
+
+## Troubleshooting
+
+**`fn + P` does nothing.** Check that Accessibility is allowed under **Settings → General**. If settings warns that global shortcuts are unavailable, also allow IceScreen under **System Settings → Privacy & Security → Input Monitoring**, then click **Check permissions again**.
+
+**The panel is black or doesn't update.** Allow Screen Recording and restart IceScreen. Some protected content, such as DRM video, can't be captured, and minimized windows don't update until restored.
+
+**Permissions keep resetting after an update.** macOS remembers permissions by app location. Keep IceScreen in Applications, quit it fully before replacing it, then open the new copy.
+
+**The screen recording prompt shows an old icon.** macOS caches that icon for the login session. Log out and back in to refresh it.
+
+**Media controls don't appear.** The source app must share playback information with macOS. Check that **Show source media controls** is on under **Settings → Media**.
+
+
+## Build from source
+
+Requires macOS, Xcode 26 or later, [uv](https://docs.astral.sh/uv/), and Cairo (`brew install cairo`) for the DMG background.
+
+```bash
+git clone https://github.com/inwf/IceScreen.git
+cd IceScreen
 bash scripts/build.sh
 open dist/IceScreen.app
 ```
 
-构建同时生成 `dist/IceScreen.app` 和 `dist/IceScreen-macOS.dmg`。打开 DMG 后，将 IceScreen 拖到「Applications（应用程序）」安装。
+This builds `dist/IceScreen.app` and `dist/IceScreen-macOS.dmg` for your Mac. Set `UNIVERSAL=1` to build for both Apple Silicon and Intel. See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and development checks, and [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
-本地交付目录中的 DMG 与 ZIP 包含交叉编译通用应用，使用 ad-hoc 签名，尚未完成 macOS 实机与 Apple 签名验证。可以在 Mac 上执行上述命令生成并验证本机应用包。
 
-生成通用应用：
+## License
 
-```bash
-UNIVERSAL=1 bash scripts/build.sh
-```
+IceScreen is free software under the [GNU General Public License v3.0 or later](LICENSE). See [NOTICE](NOTICE).
 
-已有应用包可单独生成 DMG：
-
-```bash
-bash scripts/package-dmg.sh
-```
-
-构建脚本生成图标、应用包、本地签名和压缩 DMG，并执行映像校验。发布者可设置 `SIGN_IDENTITY` 使用自己的 Developer ID；公证需要发布者的 Apple 开发者凭据。
-
-## GitHub Actions 发布流程
-
-- 普通分支的 push 不触发工作流。
-- `main` 分支 push 执行测试、macOS 通用应用构建、DMG 和 ZIP 校验，并保留十四天 Actions 构建产物。
-- Pull Request 只执行同样的检查，不发布版本。
-- 推送 `vX.Y.Z` 标签后，工作流查找同一提交上成功且未过期的主分支构建产物；找到后直接复用，找不到则重新测试和构建。检查通过后创建对应的 GitHub Release，上传通用 DMG、ZIP 和 `SHA256SUMS`。
-- Release 正文取自 `CHANGELOG.md` 中与标签对应的版本。先列完整英文，再列对应中文，两版均按新增、变更、修复等实际内容分组。版本标签必须与 `Info.plist` 中的版本一致。
-- Actions 页面手动运行时填写已有 `vX.Y.Z` 标签，按相同规则复用或重新构建产物并更新该 Release；留空只执行检查。
-
-发布一个新版本时，先更新 `Sources/IceScreen/Resources/Info.plist` 和 `CHANGELOG.md`，提交到 `main` 并确认主分支检查通过，再创建并推送对应标签：
-
-```bash
-git tag v1.2.13
-git push origin v1.2.13
-```
-
-应用图标原图为 `assets/AppIcon.png`。`scripts/make-icon.swift` 从原图生成 16–1024 像素的标准及 Retina 图标，供 Finder、程序坞、关于界面和 DMG 卷图标共用。菜单栏采用独立的冰淇淋轮廓模板图标，由系统适配深浅色。
-
-构建会重新创建应用包，并核对全部图标尺寸与原图版本。应用升级、路径变化或图标内容变化后，首次启动会更新当前应用的 Launch Services 注册信息。系统录屏提示中的应用图标由 macOS 管理；升级时先完全退出 IceScreen，再替换「应用程序」中的应用并重新启动。如果 Finder 和「关于」已显示新图标，系统录屏提示仍显示旧图标，可以退出登录后重新登录以刷新系统会话。
-
-首次启动，在设置中允许「屏幕录制」和「辅助功能」，聚焦需要捕获的来源窗口，再按 `fn + P`。辅助功能用于全局按键和定位来源窗口；系统可能同时要求输入监控权限。授权后按 macOS 提示重新启动应用。正式使用时将应用放到 `/Applications`，保持路径稳定。
-
-## 使用
-
-在「设置 → 通用 → 界面语言」选择「简体中文」或「English」。切换后设置页面、菜单和已打开浮窗的控件与提示立即更新，语言选择会自动保存；已有配置默认保持中文。系统权限对话框和其他应用的窗口标题使用其原有语言。
-
-Choose **简体中文** or **English** in **Settings → General → App language**. Settings, menus, and existing panel controls and hints update immediately, and your choice is saved for the next launch. Existing preferences default to Chinese. System permission dialogs and other apps’ window titles keep their original language.
-
-菜单栏菜单提供捕获、浮窗操作、设置和退出。设置左侧按用途分为通用、快捷键、浮窗、外观、媒体、检测与自动化、关于。通用管理启动和权限；快捷键集中管理捕获、关闭及修饰键手势；浮窗管理智能局部捕获、来源交互、Space 预览、位置和帧率；媒体管理播放、进度及 Space 操作。窗口和导航列可以调整大小。
-
-外观页面顶部提供固定的即时预览，可选择本机图片或使用内置文字与图形示例。调整圆角、透明度、锐度增强及边缘效果时，预览和当前浮窗即时更新。鼠标移入画面直接显示按钮、边缘阴影和提示；开启外观页的自动隐藏后，预览随鼠标移入淡出、移出恢复。「对比原图」临时查看增强前的画面，「恢复示例」清除自选图片。图片仅在本机解码，预览无需屏幕录制权限。
-
-外观滑块的标题、轨道与当前数值位于同一行，百分比按 1% 调整，圆角按 1 pt 调整。每条连续轨道下方保留一个默认位置圆点，点击即可恢复该项：圆角 14 pt、普通浮窗透明度 0%、边缘效果强度 100%。透明度越高，画面越透明：0% 完全不透明，100% 完全透明。升级时保留原来的显示效果。
-
-开启画面增强后，可以分别调整对比度强度和锐化强度，范围为 0–100%，默认均为 50%。0% 关闭对应增强，默认值保留原有增强效果；调整会立即作用于预览和正在显示的浮窗。
-
-打开设置时应用显示在程序坞，关闭设置窗口后恢复为菜单栏后台应用并从程序坞消失。关闭设置后，应用继续运行。可以隐藏菜单栏图标，再次打开 IceScreen 可以回到设置。
-
-| 操作 | 效果 |
-| --- | --- |
-| `fn + P`（默认，可自定义） | 捕获当前窗口；再次触发关闭整窗浮窗，不影响多窗口模式下的区域浮窗 |
-| `fn + Shift + P`（默认，可独立设置） | 框选当前窗口区域；准备或框选时再按一次只取消，不影响已有浮窗 |
-| 按住快速捕获组合并双击来源窗口（默认 `fn`） | 智能识别鼠标所在的图片、视频或内容区域；组合可在「快捷键 → 快速局部捕获」独立编辑，例如 `⌘⇧` |
-| 拖动浮窗 | 移动位置 |
-| 拖动右下角手柄或浮窗边缘 | 保持内容比例调整尺寸 |
-| 双击浮窗内容 | 聚焦来源窗口并关闭浮窗 |
-| 单击浮窗内容（可在设置中开关） | 聚焦来源窗口，再单击同一浮窗回到刚才使用的窗口 |
-| `⌘` + 拖动浮窗内容 | 框选并放大 |
-| `⌘` + 双击 | 恢复完整画面 |
-| 悬停后按 `0`（支持数字键盘） | 恢复完整画面 |
-| 滚动 | 平移已放大的画面 |
-| `⌘` + 滚动 | 以鼠标位置为中心缩放 |
-| 鼠标悬停浮窗时双指捏合 | 无需按键或先激活浮窗，以手势开始位置缩放内容 |
-| 悬停后轻按 `Space` | 有媒体时播放或暂停；其他浮窗保持来源预览 |
-| 悬停后长按 `Space` | 临时预览，松开关闭 |
-| 媒体浮窗悬停后按 `←` / `→` | 后退 / 前进 5 秒 |
-| 悬停后按 `=` / `-` | 放大 / 缩小 |
-| 悬停后按 `F` | 打开应用帧率菜单 |
-| 悬停后按 `D` | 切换内容空闲检测 |
-| 点击右上角状态圆点 | 查看检测状态并选择空闲、变化或细微变化检测 |
-| 点击顶部帧率或等待时间 | 调整应用帧率或当前浮窗的检测等待时间 |
-| 悬停后按 `C` / `S` | 切换画面变化检测 / 细微变化检测 |
-| 悬停后双击触发修饰键 | 切换所有浮窗的自动隐藏，与外观设置和右键菜单同步；透明时也有效 |
-| 悬停后按 `Delete` | 关闭浮窗，透明时也有效 |
-
-在「设置 → 浮窗」开启多窗口模式后，对同一来源窗口再次框选或快速捕获区域，会新建浮窗。区域可以独立缩放、暂停和关闭，菜单栏按「区域 1」「区域 2」区分。关闭多窗口模式后只保留最后创建的浮窗，再次选区会替换当前区域。
-
-触发修饰键默认 `fn`，可在设置中改为 `⇧`、`⌃`、`⌥` 或 `⌘`。捕获快捷键支持这些修饰键组合，包括 `⌘⇧I`；自动区域快捷键会添加一个尚未使用的修饰键，例如 `⌥⇧⌘I`。重复组合会显示冲突提示。
-
-「设置 → 外观 → 自动隐藏」可调整隐藏时透明度，范围为 0%–100%，默认 100% 完全透明。双击触发修饰键开启自动隐藏后，鼠标移入浮窗时使用该透明度并保持鼠标穿透，移出后恢复正常透明度；保留可见画面时继续更新。设置即时应用到已有浮窗，并在重新启动后保留。
-
-悬停后，浮窗左上角显示关闭按钮，顶部显示帧率及检测等待时间胶囊，右上角显示检测圆点，右下角显示圆形调整尺寸手柄。左下角提示随单击切换、Space 预览和缩放状态更新。单击浮窗会记住当前窗口并聚焦来源。来源仍在前台时，再单击同一浮窗即可返回。若中途改用窗口 B，从 B 单击浮窗后，下次就会返回 B。双击会聚焦来源并关闭浮窗。拖动和 Command 框选使用独立手势。可在「设置 → 浮窗」调整单击开关。
-
-操作提示随鼠标移入显示、移出隐藏，并避开右下角手柄；小浮窗精简提示内容。悬停背景由上下边缘的半透明暗色渐变组成，中央画面保持清晰；效果可以在外观设置中关闭或调整。较小浮窗优先保留关闭、检测和尺寸手柄。右键菜单提供预览、暂停、缩放和其他操作；完整快捷键可在设置的「快捷键」页面查看。
-
-macOS 26 浮窗操作按钮采用 SwiftUI `.glass(.clear.interactive())`，使用系统 clear 玻璃变体及交互反馈，保留圆形图标和胶囊数值布局，检测圆点以绿色或蓝色区分状态；右下角拖动手柄也使用 clear 玻璃。玻璃下方为轻微暗色渐变，圆角裁剪独立作用于画面，保留玻璃边缘。设置侧边栏和工具栏由系统管理 Liquid Glass。窗口保持非激活状态，材质遵循系统「降低透明度」与对比度设置。
-
-Space 预览在首帧就绪后，从浮窗的画面位置等比展开，沿展开方向轻微越过当前显示器中央，再收回到位。裁剪过的浮窗先显示对应区域，再展开完整画面。关闭时从当前位置收回浮窗；开启「减少动态效果」时仅淡入淡出。动画期间捕获尺寸保持固定。
-
-智能局部捕获在快速捕获时读取鼠标下的辅助功能区域，并对一次截图运行系统 Vision 矩形识别；选中外层内容边界后裁去对称黑白边框。识别在后台执行，不会持续分析捕获视频；可在「浮窗」关闭智能识别。
-
-识别到来源媒体后，悬停显示播放／暂停、上一首、下一首；有可跳转的时长和进度时显示可拖动进度条。轻按 Space 控制播放，按住超过 0.25 秒打开预览，松开关闭且不改变播放状态。媒体开关位于「媒体」，预览开关位于「浮窗」。来源应用需要向系统媒体服务提供状态和命令处理；直播、禁止跳转、没有提供系统媒体状态或无法唯一匹配的来源不会显示相应控制。媒体辅助进程仅在启用媒体控制且存在浮窗时运行，通过本机管道通信。
-
-Music、TV、Spotify、Swinsian 和 VLC 通过应用自动化设置播放位置，首次调整进度需要允许系统的自动化请求；其他来源通过系统媒体服务调整。连续方向键操作会合并等待中的进度请求，关闭媒体控制或退出时终止执行中的操作。
-
-捕获时来源窗口保持原位置。来源应用被隐藏或窗口最小化时，定位操作会先恢复显示。
-
-开启 Stage Manager（台前调度）时，会识别其他分组的缩略窗口，保留正常画面比例、暂停该分组的捕获并提供「返回来源窗口」按钮；返回后重新检查状态并继续捕获。
-
-自动隐藏在鼠标进入时淡出并穿透鼠标事件，鼠标离开后恢复。鼠标位于原浮窗位置时，双击触发修饰键关闭自动隐藏，即可恢复点击关闭按钮和操作菜单。菜单栏也可以管理每个浮窗。
-
-`fn` / 地球键可以在系统设置 → 键盘中设为「不执行操作」，避免同时触发系统动作。部分系统保护内容、DRM 视频或已经最小化的窗口可能无法提供正常画面。
-
-## 性能设置
-
-- 帧率支持 1、5、10、15、24、30、60 FPS，按应用保存。日志和终端建议 1–5 FPS，视频建议 30–60 FPS。
-- 默认 10 FPS；捕获分辨率跟随浮窗大小和显示器缩放比例，最长边上限为 4096 像素。
-- 自动隐藏至完全透明、暂停和系统休眠时停止捕获。
-- 使用一个最新帧槽位合并显示请求，GPU 最多允许两个未完成命令，限制积压。
-- 内容检测每秒最多分析 32 × 32 个亮度采样，细微变化模式为 64 × 64；关闭时停止采样。
-- 图像增强使用 GPU 过滤器。需要最低功耗时，可以关闭图像增强和空闲检测。
-
-## 内容检测
-
-在「检测与自动化」中分别配置空闲与变化检测。空闲检测在画面持续静止后提醒一次；变化检测在安静时间达到阈值后，下一次画面变化时提醒。细微变化模式适合加载指示器和小型进度条。浮窗菜单与 `D`、`C`、`S` 可以独立设置当前浮窗。
-
-提醒可以通过系统通知送达，点击通知定位来源窗口。隐藏、暂停和睡眠期间停止检测，恢复后重新建立基准。也可以填写 Shell 命令，在对应检测事件发生时通过 `/bin/sh` 运行；每个浮窗同时运行一个命令，执行期间忽略新的命令触发。
-
-命令可以读取 `ICESCREEN_EVENT`（`idle` 或 `change`）、`ICESCREEN_APP`、`ICESCREEN_BUNDLE_ID`、`ICESCREEN_WINDOW_ID` 和 `ICESCREEN_WINDOW_TITLE` 环境变量。超时、关闭浮窗或退出应用会终止命令的整个进程组。命令标准输出和标准错误不保存，非零退出状态会在应用中显示。
-
-## 命令行
-
-```bash
-/Applications/IceScreen.app/Contents/MacOS/IceScreen --help
-/Applications/IceScreen.app/Contents/MacOS/IceScreen --app Terminal
-/Applications/IceScreen.app/Contents/MacOS/IceScreen --app Terminal --window "build" --zoom bottom-left:5x
-/Applications/IceScreen.app/Contents/MacOS/IceScreen --window 12345 --region
-```
-
-| 参数 | 说明 |
-| --- | --- |
-| `--app NAME` | 应用名称子串或完整 bundle ID，不区分大小写 |
-| `--window TITLE_OR_ID` | 标题子串或准确的数字窗口 ID |
-| `--zoom POSITION:FACTOR` | 初始放大倍率 1–32，例如 `center:2x` |
-| `--region` | 打开交互式区域选择 |
-| `--help` | 输出参数说明 |
-
-`POSITION` 支持 `top-left`、`top`、`top-right`、`left`、`center`、`right`、`bottom-left`、`bottom`、`bottom-right`。标题匹配多个窗口时，需要同时指定应用或改用数字窗口 ID。
-
-应用已经运行时，命令传给现有实例；接收确认超时返回非零退出码。接收确认代表请求送达，捕获授权或窗口匹配错误通过设置窗口显示。
-
-## 开发
-
-```bash
-swift test
-CONFIGURATION=debug bash scripts/build.sh
-```
-
-`IceCore` 包含跨平台的坐标、命令行、偏好和空闲检测逻辑。Linux 可以运行 `swift test`；完整桌面应用的编译、签名和交互验证需要 macOS。
-
-CI 检查核心逻辑、图标与安装背景、原生浮窗事件、检测命令、媒体辅助进程和安装包。后台浮窗检查创建另一个实际前台应用，分别验证 WindowServer 命中及 AppKit 队列点击后的焦点保持。捕获授权、真实来源窗口定位、硬件手势、多显示器和 CPU／内存／功耗测量需要实际设备验收，CI 成功不代表这些检查已经完成。
-
-参见 [贡献说明](CONTRIBUTING.md)。
+<p align="center"><sub>If IceScreen keeps an eye on things for you, a <a href="https://github.com/inwf/IceScreen">GitHub star</a> helps others find it.</sub></p>
